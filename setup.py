@@ -44,5 +44,5 @@ setup(name='degen-primer-gui',
       packages=['DegenPrimerGUI'],
       scripts=['degen_primer_gui'],
       data_files=[('share/applications', ['DegenPrimerGUI.desktop'])
-                  ('share/degen_primer', ['DegenPrimerUI.ui', 'ReportWidget.ui'])]
+                  ('share/degen_primer', ['DegenPrimerUI.ui'])]
       )

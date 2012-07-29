@@ -80,7 +80,7 @@ class DegenPrimerGUI(DegenPrimerConfig, QMainWindow):
     _ui_path = ('./', '/usr/local/share/degen_primer/', '/usr/share/degen_primer')
     _ui_file        = 'DegenPrimerUI.ui'
     _config_option  = {'option':'config_file',
-                               'section'   :'primers',
+                               'section'   :'config',
                                #number of arguments
                                'nargs'     :1,
                                #help string
@@ -90,6 +90,17 @@ class DegenPrimerGUI(DegenPrimerConfig, QMainWindow):
                                'field_type':'file', #for gui
                                #default value
                                'default'   :None}
+    _cwdir_option   = {'option':'save_reports_to',
+                               'section'   :'config',
+                               #number of arguments
+                               'nargs'     :1,
+                               #help string
+                               'help'      :'Save reports to this directory.',
+                               #type
+                               'field_type':'directory', #for gui
+                               #default value
+                               'default'   :None}
+
 
     #stdout/err catcher signal
     _append_terminal_output = pyqtSignal(str)
@@ -98,6 +109,8 @@ class DegenPrimerGUI(DegenPrimerConfig, QMainWindow):
         #parent's constructors
         DegenPrimerConfig.__init__(self)
         QMainWindow.__init__(self)
+        #setup configuration group
+        self._groups[self._config_option['section']] = 'Configuration'
         #try to load UI
         for path in self._ui_path:
             try:
@@ -113,6 +126,7 @@ class DegenPrimerGUI(DegenPrimerConfig, QMainWindow):
         self._fields      = dict()
         #config file chooser
         self._setup_option_field(self._config_option)
+        self._setup_option_field(self._cwdir_option)
         self._fields[self._config_option['option']].textChanged.connect(self._load_config)
         #all other options
         for option in self._options:
@@ -152,16 +166,22 @@ class DegenPrimerGUI(DegenPrimerConfig, QMainWindow):
         elif option['field_type'] == 'boolean':
             field = QCheckBox(self.centralWidget())
             label = option['option'].replace('_', ' ')
-        elif option['field_type'] == 'file':
+        elif option['field_type'] == 'file' \
+        or   option['field_type'] == 'directory':
             field = QLineEdit(self.centralWidget())
             label = QPushButton(option['option'].replace('_', ' '), self.centralWidget())
             file_dialog = QFileDialog(label, option['option'].replace('_', ' '))
             label.clicked.connect(file_dialog.show)
-            if self._multiple_args(option):
-                file_dialog.setFileMode(QFileDialog.ExistingFiles)
-                field_wrapper = LineEditWrapper(field)
-                file_dialog.filesSelected.connect(field_wrapper.setText)
+            if option['field_type'] == 'file':
+                if self._multiple_args(option):
+                    file_dialog.setFileMode(QFileDialog.ExistingFiles)
+                    field_wrapper = LineEditWrapper(field)
+                    file_dialog.filesSelected.connect(field_wrapper.setText)
+                else:
+                    file_dialog.fileSelected.connect(field.setText)
             else:
+                file_dialog.setFileMode(QFileDialog.Directory)
+                file_dialog.setOption(QFileDialog.ShowDirsOnly, True)
                 file_dialog.fileSelected.connect(field.setText)
         if field:
             #setup group box if necessary
@@ -229,8 +249,8 @@ class DegenPrimerGUI(DegenPrimerConfig, QMainWindow):
     def _load_config(self, config_file):
         self._fields_empty = True
         self.parse_configuration(config_file)
-        if os.path.exists(os.path.dirname(config_file)):
-            os.chdir(os.path.dirname(config_file))
+        if config_file and os.path.exists(os.path.dirname(unicode(config_file))):
+            self._fields[self._cwdir_option['option']].setText(self.trUtf8(os.path.dirname(unicode(config_file))))
     #end def
     
     
@@ -255,6 +275,18 @@ class DegenPrimerGUI(DegenPrimerConfig, QMainWindow):
         self.terminalOutput.clear()
         self._clear_results()
         self._config_file = unicode(self._fields[self._config_option['option']].text())
+        cwdir_field = self._fields[self._cwdir_option['option']]
+        cwdir = unicode(cwdir_field.text())
+        while not os.path.isdir(cwdir):
+            file_dialog = QFileDialog(None, 'Select a directory to save reports to...')
+            file_dialog.setFileMode(QFileDialog.Directory)
+            file_dialog.setOption(QFileDialog.ShowDirsOnly, True)
+            file_dialog.setModal(True)
+            file_dialog.fileSelected.connect(cwdir_field.setText)
+            file_dialog.exec_()
+            cwdir = unicode(cwdir_field.text())
+        os.chdir(cwdir)
+        print 'Current directory is %s\n' % os.getcwd()
         self.parse_configuration(self._config_file)
         self._pipeline_thread.start()
     #end def

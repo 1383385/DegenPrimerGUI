@@ -1,0 +1,8 @@
+[Desktop Entry]
+Name=DegenPrimer
+Comment=Graphical user interface for degen_primer
+Categories=Science;
+Exec=degen_primer_gui
+Icon=degen_primer
+Terminal=false
+Type=Application
