@@ -3,3 +3,5 @@
 *.fasta
 *.ipcr
 build
+MANIFEST
+dist
