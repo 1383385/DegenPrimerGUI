@@ -37,11 +37,17 @@ child = subprocess.Popen(pyrcc4_cli,
                          stdout=subprocess.PIPE,
                          stderr=subprocess.PIPE,
                          shell=(sys.platform!="win32"))
-
+rcc_content = child.stdout.read()
+#filter out timestamp or dpkg-source complains that the source had changed
+rcc_filtered = ''
+for line in rcc_content.split('\n'):
+    if line[:10] == '# Created:':
+        line = '# Created:'
+    rcc_filtered += line + '\n'
+#write compiled resources module
 rcc_file = open(rcc_filename, 'w')
-rcc_file.write(child.stdout.read())
+rcc_file.write(rcc_filtered)
 rcc_file.close()
-
 
 #setup
 from distutils.core import setup
@@ -63,5 +69,5 @@ setup(name='degen-primer-gui',
       scripts=['degen_primer_gui'],
       data_files=[('share/icons/hicolor/scalable/apps', ['degen_primer.svg']),
                   ('share/applications', ['DegenPrimerGUI.desktop']),
-                  ('share/degen_primer_gui', ['DegenPrimerUI.ui'])]
+                  ('share/degen_primer_gui', ['DegenPrimerUI.ui', 'DegenPrimerUI.qrc'])]
       )

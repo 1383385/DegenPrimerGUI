@@ -15,5 +15,4 @@ Description: DegenPrimer is a tool to check the quality of degenerate primers.
  melting temperatures, finds stable dimers, hairpins and crossdimers, makes a BLAST 
  search for specificity and prepare input for ipcress (in silica PCR simulation program). 
  It has a simple command line interface. It is written in python using Biopython library.
- 
  This is a graphical user interface for degen_primer written in Qt4 using python bindings.
