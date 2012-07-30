@@ -77,7 +77,7 @@ class LineEditWrapper(QObject):
 class DegenPrimerGUI(DegenPrimerConfig, QMainWindow):
     '''Graphical User Interface for degen_primer'''
 
-    _ui_path = ('./', '/usr/local/share/degen_primer/', '/usr/share/degen_primer')
+    _ui_path = ('./', '/usr/local/share/degen_primer_gui/', '/usr/share/degen_primer')
     _ui_file        = 'DegenPrimerUI.ui'
     _config_option  = {'option':'config_file',
                                'section'   :'config',
@@ -118,12 +118,12 @@ class DegenPrimerGUI(DegenPrimerConfig, QMainWindow):
         #try to load UI
         for path in self._ui_path:
             try:
-                uic.loadUi(path+self._ui_file, self)
+                uic.loadUi(self.trUtf8(path+self._ui_file), self)
                 break
             except:
                 print path+self._ui_file+' no such file.'
                 pass
-        if not self.centralwidget: 
+        if not self.centralWidget(): 
             raise OSError('Error: unable to locate ui file.')
         #assemble config form
         self._group_boxes = dict()

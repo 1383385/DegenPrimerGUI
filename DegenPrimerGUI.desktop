@@ -1,7 +1,8 @@
 [Desktop Entry]
 Name=DegenPrimer
+GenericName=DegenPrimer
 Comment=Graphical user interface for degen_primer
-Categories=Science;
+Categories=Education;Science;
 Exec=degen_primer_gui
 Icon=degen_primer
 Terminal=false
