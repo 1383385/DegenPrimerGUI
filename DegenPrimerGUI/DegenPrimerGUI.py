@@ -90,12 +90,16 @@ class DegenPrimerGUI(DegenPrimerConfig, QMainWindow):
                                'field_type':'file', #for gui
                                #default value
                                'default'   :None}
-    _cwdir_option   = {'option':'save_reports_to',
+    _cwdir_option   = {'option':'working_directory',
                                'section'   :'config',
                                #number of arguments
                                'nargs'     :1,
                                #help string
-                               'help'      :'Save reports to this directory.',
+                               'help'      :'Directory where degen_primer will be executed '
+                               'and where all the reports will be saved. IMPORTANT: If you are loading '
+                               'configuration from a .cfg file, working directory is automatically set to '
+                               'the directory containing the file in order to maintain correct '
+                               'relative paths that it may contain.',
                                #type
                                'field_type':'directory', #for gui
                                #default value
