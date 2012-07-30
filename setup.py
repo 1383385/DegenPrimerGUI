@@ -30,7 +30,7 @@ def read(fname):
 
 #compile resources
 qrc_filename = 'DegenPrimerUI.qrc'
-rcc_filename = 'DegenPrimerGUI/DegenPrimerRcc.py'
+rcc_filename = 'DegenPrimerGUI/DegenPrimerUI_rc.py'
 pyrcc4_cli   = 'pyrcc4 -py3 %s' % qrc_filename
 child = subprocess.Popen(pyrcc4_cli,
                          stdin=subprocess.PIPE,

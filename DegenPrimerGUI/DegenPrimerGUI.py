@@ -27,6 +27,7 @@ QDoubleSpinBox, QSpinBox, QCheckBox, QFileDialog, QPushButton, QPlainTextEdit, Q
 from DegenPrimer.DegenPrimerConfig import DegenPrimerConfig
 from DegenPrimer.DegenPrimerPipeline import degen_primer_pipeline
 from DegenPrimer.StringTools import wrap_text, print_exception
+import DegenPrimerUI_rc #qt resources for the UI
 
 
 class DegenPrimerPipeline(QThread):
@@ -77,7 +78,7 @@ class LineEditWrapper(QObject):
 class DegenPrimerGUI(DegenPrimerConfig, QMainWindow):
     '''Graphical User Interface for degen_primer'''
 
-    _ui_path = ('./', '/usr/local/share/degen_primer_gui/', '/usr/share/degen_primer')
+    _ui_path = ('./', '/usr/local/share/degen_primer_gui/', '/usr/share/degen_primer/')
     _ui_file        = 'DegenPrimerUI.ui'
     _config_option  = {'option':'config_file',
                                'section'   :'config',
