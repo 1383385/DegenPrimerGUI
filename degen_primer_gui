@@ -21,14 +21,27 @@ Created on Jul 29, 2012
 
 
 import sys
+import signal
+from PyQt4.QtCore import QTimer
 from PyQt4.QtGui import QApplication
 from DegenPrimerGUI.DegenPrimerGUI import DegenPrimerGUI
 
+def sig_handler(signal, frame):
+    QApplication.quit()
+
 if __name__ == '__main__':
+    #setup signal handler
+    signal.signal(signal.SIGINT, sig_handler)
+    #setup main application
     app = QApplication(sys.argv)
+    timer = QTimer()
+    timer.start(500)
+    timer.timeout.connect(lambda: None)  # Let the interpreter run each 500 ms.
     degen_primer_main = DegenPrimerGUI()
     #catch stdout/err
     sys.stdout = degen_primer_main
     sys.stderr = degen_primer_main
+    #show main window
     degen_primer_main.show()
+    #run
     sys.exit(app.exec_())
