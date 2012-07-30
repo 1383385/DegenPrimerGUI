@@ -22,7 +22,7 @@ Created on Jul 27, 2012
 import os
 from PyQt4 import uic
 from PyQt4.QtCore import QObject, QThread, pyqtSlot, pyqtSignal
-from PyQt4.QtGui import QMainWindow, QFormLayout, QGroupBox, QLineEdit, \
+from PyQt4.QtGui import QApplication, QMainWindow, QFormLayout, QGroupBox, QLineEdit, \
 QDoubleSpinBox, QSpinBox, QCheckBox, QFileDialog, QPushButton, QPlainTextEdit, QFont
 from DegenPrimer.DegenPrimerConfig import DegenPrimerConfig
 from DegenPrimer.DegenPrimerPipeline import degen_primer_pipeline
@@ -297,11 +297,15 @@ class DegenPrimerGUI(DegenPrimerConfig, QMainWindow):
     
     
     #for pipeline thread to call
+    #lock analyse and reset buttons while analysis is running
     @pyqtSlot(bool)
     def lock_buttons(self, lock=True):
         self.analyseButton.setEnabled(not lock)
         self.resetButton.setEnabled(not lock)
-
+    #end def
+    
+    
+    #show result tabs
     @pyqtSlot()
     def show_results(self):
         #display reports
@@ -322,6 +326,8 @@ class DegenPrimerGUI(DegenPrimerConfig, QMainWindow):
                 continue
             report_widget.insertPlainText(self.trUtf8(report_text))
             self.mainTabs.addTab(report_widget, report[0])
+        #alert main window
+        QApplication.alert(self)
     #end def
         
         
@@ -333,7 +339,6 @@ class DegenPrimerGUI(DegenPrimerConfig, QMainWindow):
 
 #tests
 import sys
-from PyQt4.QtGui import QApplication
 
 if __name__ == '__main__':
     app = QApplication(sys.argv)

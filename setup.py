@@ -43,6 +43,7 @@ setup(name='degen-primer-gui',
         'Programming Language :: Python'],
       packages=['DegenPrimerGUI'],
       scripts=['degen_primer_gui'],
-      data_files=[('share/applications', ['DegenPrimerGUI.desktop'])
+      data_files=[('share/icons/highcolor/scalable', ['degen_primer.svg']),
+                  ('share/applications', ['DegenPrimerGUI.desktop']),
                   ('share/degen_primer', ['DegenPrimerUI.ui'])]
       )
