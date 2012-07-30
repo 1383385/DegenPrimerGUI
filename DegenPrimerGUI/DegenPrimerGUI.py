@@ -23,7 +23,7 @@ import os
 from PyQt4 import uic
 from PyQt4.QtCore import QObject, QThread, pyqtSlot, pyqtSignal
 from PyQt4.QtGui import QApplication, QMainWindow, QFormLayout, QGroupBox, QLineEdit, \
-QDoubleSpinBox, QSpinBox, QCheckBox, QFileDialog, QPushButton, QPlainTextEdit, QFont
+QDoubleSpinBox, QSpinBox, QCheckBox, QFileDialog, QPushButton, QPlainTextEdit, QFont, QMessageBox
 from DegenPrimer.DegenPrimerConfig import DegenPrimerConfig
 from DegenPrimer.DegenPrimerPipeline import degen_primer_pipeline
 from DegenPrimer.StringTools import wrap_text, print_exception
@@ -335,6 +335,24 @@ class DegenPrimerGUI(DegenPrimerConfig, QMainWindow):
     #stdout/err catcher
     def write(self, text):
         self._append_terminal_output.emit(self.trUtf8(text))
+        
+        
+    #close handler
+    #@pyqtSlot(None, result=bool)
+    def closeEvent(self, event):
+        if self._pipeline_thread.isRunning():
+            if QMessageBox.question(None, '', 'The analysis thread is still running. '
+                                    'If you quit now a loss of data may occure.\n'
+                                    'Are you sure you want to quit?',
+                                    QMessageBox.Yes | QMessageBox.No,
+                                    QMessageBox.No) == QMessageBox.Yes:
+                self._pipeline_thread.terminate()
+                self._pipeline_thread.wait()
+                event.accept()
+            else: 
+                event.ignore()
+        else: event.accept()
+    #end def
 #end class
 
 

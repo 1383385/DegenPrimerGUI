@@ -27,16 +27,20 @@ from PyQt4.QtGui import QApplication
 from DegenPrimerGUI.DegenPrimerGUI import DegenPrimerGUI
 
 def sig_handler(signal, frame):
-    QApplication.quit()
+    QApplication.closeAllWindows()
 
 if __name__ == '__main__':
     #setup signal handler
-    signal.signal(signal.SIGINT, sig_handler)
+    signal.signal(signal.SIGINT,  sig_handler)
+    signal.signal(signal.SIGTERM, sig_handler)
+    signal.signal(signal.SIGQUIT, sig_handler)
     #setup main application
     app = QApplication(sys.argv)
+    #let python interpreter run each 500ms to catch a signal
     timer = QTimer()
     timer.start(500)
-    timer.timeout.connect(lambda: None)  # Let the interpreter run each 500 ms.
+    timer.timeout.connect(lambda: None)
+    #setup main window
     degen_primer_main = DegenPrimerGUI()
     #catch stdout/err
     sys.stdout = degen_primer_main
