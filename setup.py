@@ -22,10 +22,28 @@ Created on Jul 27, 2012
 # Used for the long_description.  It's nice, because now 1) we have a top level
 # README file and 2) it's easier to type in the README file than to put a raw
 # string in below ...
-import os
+import sys, os
+import subprocess
+
 def read(fname):
     return open(os.path.join(os.path.dirname(__file__), fname)).read()
 
+#compile resources
+qrc_filename = 'DegenPrimerUI.qrc'
+rcc_filename = 'DegenPrimerGUI/DegenPrimerRcc.py'
+pyrcc4_cli   = 'pyrcc4 -py3 %s' % qrc_filename
+child = subprocess.Popen(pyrcc4_cli,
+                         stdin=subprocess.PIPE,
+                         stdout=subprocess.PIPE,
+                         stderr=subprocess.PIPE,
+                         shell=(sys.platform!="win32"))
+
+rcc_file = open(rcc_filename, 'w')
+rcc_file.write(child.stdout.read())
+rcc_file.close()
+
+
+#setup
 from distutils.core import setup
 setup(name='degen-primer-gui',
       version='1.0',

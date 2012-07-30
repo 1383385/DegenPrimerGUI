@@ -23,6 +23,7 @@ Created on Jul 29, 2012
 import sys
 from PyQt4.QtGui import QApplication
 from DegenPrimerGUI.DegenPrimerGUI import DegenPrimerGUI
+from DegenPrimerGUI import DegenPrimerRcc
 
 if __name__ == '__main__':
     app = QApplication(sys.argv)
