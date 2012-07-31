@@ -23,7 +23,7 @@ import os
 from PyQt4 import uic
 from PyQt4.QtCore import QObject, QThread, pyqtSlot, pyqtSignal
 from PyQt4.QtGui import QApplication, QMainWindow, QFormLayout, QGroupBox, QLineEdit, \
-QDoubleSpinBox, QSpinBox, QCheckBox, QFileDialog, QPushButton, QPlainTextEdit, QFont, QMessageBox
+QDoubleSpinBox, QSpinBox, QCheckBox, QFileDialog, QPushButton, QPlainTextEdit, QFont, QMessageBox, QTextCursor
 from DegenPrimer.DegenPrimerConfig import DegenPrimerConfig
 from DegenPrimer.DegenPrimerPipeline import degen_primer_pipeline
 from DegenPrimer.StringTools import wrap_text, print_exception
@@ -325,7 +325,8 @@ class DegenPrimerGUI(DegenPrimerConfig, QMainWindow):
                 print 'Unable to load report file:', report[1]
                 print_exception(e)
                 continue
-            report_widget.insertPlainText(self.trUtf8(report_text))
+            report_widget.insertPlainText(self.trUtf8(report_text)) #TODO: toUTF instead of translate
+            report_widget.moveCursor(QTextCursor.Start, QTextCursor.MoveAnchor)
             self.mainTabs.addTab(report_widget, report[0])
         #alert main window
         QApplication.alert(self)
