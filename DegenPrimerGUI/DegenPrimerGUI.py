@@ -21,9 +21,10 @@ Created on Jul 27, 2012
 
 import os
 from PyQt4 import uic
-from PyQt4.QtCore import QObject, QThread, pyqtSlot, pyqtSignal
-from PyQt4.QtGui import QApplication, QMainWindow, QFormLayout, QGroupBox, QLineEdit, \
-QDoubleSpinBox, QSpinBox, QCheckBox, QFileDialog, QPushButton, QPlainTextEdit, QFont, QMessageBox, QTextCursor
+from PyQt4.QtCore import QObject, QThread, QString, pyqtSlot, pyqtSignal
+from PyQt4.QtGui import QApplication, QMainWindow, QFormLayout, QGroupBox, \
+QLineEdit, QDoubleSpinBox, QSpinBox, QCheckBox, QFileDialog, QPushButton, \
+QPlainTextEdit, QFont, QMessageBox, QTextCursor
 from DegenPrimer.DegenPrimerConfig import DegenPrimerConfig
 from DegenPrimer.DegenPrimerPipeline import degen_primer_pipeline
 from DegenPrimer.StringTools import wrap_text, print_exception
@@ -65,7 +66,7 @@ class LineEditWrapper(QObject):
         for s in strings:
             if text: text += ' '
             text += s
-        self.parent().setText(self.trUtf8(text))
+        self.parent().setText(QString.fromUtf8(text))
     #end def
     
     def text(self):
@@ -119,7 +120,7 @@ class DegenPrimerGUI(DegenPrimerConfig, QMainWindow):
         #try to load UI
         for path in self._ui_path:
             try:
-                uic.loadUi(self.trUtf8(path+self._ui_file), self)
+                uic.loadUi(QString.fromUtf8(path+self._ui_file), self)
                 break
             except:
                 print path+self._ui_file+' no such file.'
@@ -236,7 +237,7 @@ class DegenPrimerGUI(DegenPrimerConfig, QMainWindow):
             or option['field_type'] == 'file':
                 if not value: value = ''
                 if option['nargs'] == 1:
-                    self._fields[option['option']].setText(self.trUtf8(value))
+                    self._fields[option['option']].setText(QString.fromUtf8(value))
                 else:
                     self._fields[option['option']].findChild(LineEditWrapper).setText(value)
             elif option['field_type'] == 'float' \
@@ -255,7 +256,7 @@ class DegenPrimerGUI(DegenPrimerConfig, QMainWindow):
         self._fields_empty = True
         self.parse_configuration(config_file)
         if config_file and os.path.exists(os.path.dirname(unicode(config_file))):
-            self._fields[self._cwdir_option['option']].setText(self.trUtf8(os.path.dirname(unicode(config_file))))
+            self._fields[self._cwdir_option['option']].setText(QString.fromUtf8(os.path.dirname(unicode(config_file))))
     #end def
     
     
@@ -325,7 +326,7 @@ class DegenPrimerGUI(DegenPrimerConfig, QMainWindow):
                 print 'Unable to load report file:', report[1]
                 print_exception(e)
                 continue
-            report_widget.insertPlainText(self.trUtf8(report_text)) #TODO: toUTF instead of translate
+            report_widget.insertPlainText(QString.fromUtf8(report_text))
             report_widget.moveCursor(QTextCursor.Start, QTextCursor.MoveAnchor)
             self.mainTabs.addTab(report_widget, report[0])
         #alert main window
@@ -335,7 +336,7 @@ class DegenPrimerGUI(DegenPrimerConfig, QMainWindow):
         
     #stdout/err catcher
     def write(self, text):
-        self._append_terminal_output.emit(self.trUtf8(text))
+        self._append_terminal_output.emit(QString.fromUtf8(text))
         
         
     #close handler
