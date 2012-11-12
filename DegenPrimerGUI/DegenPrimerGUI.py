@@ -64,14 +64,14 @@ class LineEditWrapper(QObject):
     def setText(self, strings):
         text = ''
         for s in strings:
-            if text: text += ' '
-            text += s
+            if text: text += ', '
+            text += unicode(s)
         self.parent().setText(QString.fromUtf8(text))
     #end def
     
     def text(self):
         text = unicode(self.parent().text())
-        return text.split(' ')
+        return text.split(', ')
     #end def
 #end class
 
@@ -223,6 +223,7 @@ class DegenPrimerGUI(DegenPrimerConfig, QMainWindow):
     
     @pyqtSlot('QString')
     def parse_configuration(self, config_file=None):
+        #parse configuration
         if config_file:
             DegenPrimerConfig.parse_configuration(self, unicode(config_file))
         else: DegenPrimerConfig.parse_configuration(self)
@@ -293,7 +294,11 @@ class DegenPrimerGUI(DegenPrimerConfig, QMainWindow):
             cwdir = unicode(cwdir_field.text())
         os.chdir(cwdir)
         print 'Current directory is %s\n' % os.getcwd()
-        self.parse_configuration(self._config_file)
+        try:
+            self.parse_configuration(self._config_file)
+        except ValueError, e:
+            self.write(e.message)
+            return
         self._pipeline_thread.start()
     #end def
     
