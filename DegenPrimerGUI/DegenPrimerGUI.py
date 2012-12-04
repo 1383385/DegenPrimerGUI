@@ -26,29 +26,52 @@ from PyQt4.QtGui import QApplication, QMainWindow, QFormLayout, QGroupBox, \
 QLineEdit, QDoubleSpinBox, QSpinBox, QCheckBox, QFileDialog, QPushButton, \
 QPlainTextEdit, QFont, QMessageBox, QTextCursor
 from DegenPrimer.DegenPrimerConfig import DegenPrimerConfig
-from DegenPrimer.DegenPrimerPipeline import degen_primer_pipeline
+from DegenPrimer.DegenPrimerPipeline import DegenPrimerPipeline
 from DegenPrimer.StringTools import wrap_text, print_exception
 import DegenPrimerUI_rc #qt resources for the UI
 
 
-class DegenPrimerPipeline(QThread):
+class DegenPrimerPipelineThread(QThread):
     '''Wrapper for degen_primer_pipeline with multi-threading'''
-    lock_buttons = pyqtSignal(bool)
-    show_results = pyqtSignal()
+    _lock_buttons   = pyqtSignal(bool)
+    _show_results   = pyqtSignal()
+    
     
     def __init__(self, args):
         QThread.__init__(self)
-        self._args = args
-        self.lock_buttons.connect(self._args.lock_buttons)
-        self.show_results.connect(self._args.show_results)
+        self._args  = args
+        self._pipeline = DegenPrimerPipeline()
+        #connect signals
+        self._lock_buttons.connect(self._args.lock_buttons)
+        self._show_results.connect(self._args.show_results)
     #end def
     
-    def run(self):
-        self.lock_buttons.emit(True)
-        degen_primer_pipeline(self._args)
-        self.show_results.emit()
-        self.lock_buttons.emit(False)
+    
+    def __del__(self):
+        self._pipeline.terminate()
+        self.wait()
     #end def
+    
+    
+    def run(self):
+        self._lock_buttons.emit(True)
+        success = -1
+        try:
+            success = self._pipeline.run(self._args)
+        except Exception, e:
+            self._pipeline.terminate()
+            print '\nException has occured while executing DegenPrimer Pipeline. Please, try again.'
+            print_exception(e)
+        if success == 0:
+            self._show_results.emit()
+        self._lock_buttons.emit(False)
+    #end def
+    
+    
+    @pyqtSlot()
+    def stop(self):
+        self._pipeline.terminate()
+        self.wait()
 #end class
 
 
@@ -110,6 +133,8 @@ class DegenPrimerGUI(DegenPrimerConfig, QMainWindow):
 
     #stdout/err catcher signal
     _append_terminal_output = pyqtSignal(str)
+    #signal to abort computations
+    _pipeline_thread_stop   = pyqtSignal() #TODO: need to find a way to abort computations cleanly
 
     def __init__(self):
         #parent's constructors
@@ -143,11 +168,15 @@ class DegenPrimerGUI(DegenPrimerConfig, QMainWindow):
         self.resetButton.clicked.connect(self._reset_fields)
         #setup analyse button
         self.analyseButton.clicked.connect(self._analyse)
+        #setup abort button
+        self.abortButton.clicked.connect(self._abort_analysis)
+        self.abortButton.hide()
         #setup terminal output
         self._append_terminal_output.connect(self.terminalOutput.insertPlainText)
         self.terminalOutput.textChanged.connect(self.terminalOutput.ensureCursorVisible)
         #pipeline thread
-        self._pipeline_thread = DegenPrimerPipeline(self)
+        self._pipeline_thread = DegenPrimerPipelineThread(self)
+        self._pipeline_thread_stop.connect(self._pipeline_thread.stop)
     #end def
     
     
@@ -176,7 +205,7 @@ class DegenPrimerGUI(DegenPrimerConfig, QMainWindow):
         or   option['field_type'] == 'directory':
             field = QLineEdit(self.centralWidget())
             label = QPushButton(option['option'].replace('_', ' '), self.centralWidget())
-            file_dialog = QFileDialog(label, option['option'].replace('_', ' '))
+            file_dialog = QFileDialog(self.centralWidget(), option['option'].replace('_', ' '))
             label.clicked.connect(file_dialog.show)
             if option['field_type'] == 'file':
                 if self._multiple_args(option):
@@ -196,7 +225,7 @@ class DegenPrimerGUI(DegenPrimerConfig, QMainWindow):
                 self._group_boxes[option['section']] = QFormLayout(group_box)
                 self.configForm.addWidget(group_box)
             #add a field to the layout
-            field.setToolTip(wrap_text(option['help']))
+            field.setToolTip(wrap_text(option['help'].replace('%%', '%')))
             self._fields[option['option']] = field
             self._group_boxes[option['section']].addRow(label, field)
     #end def
@@ -260,6 +289,9 @@ class DegenPrimerGUI(DegenPrimerConfig, QMainWindow):
             self._fields[self._cwdir_option['option']].setText(QString.fromUtf8(os.path.dirname(unicode(config_file))))
     #end def
     
+    def load_config(self, config_file):
+        self._fields[self._config_option['option']].setText(QString.fromUtf8(unicode(config_file)))
+    
     
     def _clear_results(self):
         while self.mainTabs.count() > 1:
@@ -309,6 +341,8 @@ class DegenPrimerGUI(DegenPrimerConfig, QMainWindow):
     def lock_buttons(self, lock=True):
         self.analyseButton.setEnabled(not lock)
         self.resetButton.setEnabled(not lock)
+#        if lock: self.abortButton.show()
+#        else: self.abortButton.hide()
     #end def
     
     
@@ -343,9 +377,18 @@ class DegenPrimerGUI(DegenPrimerConfig, QMainWindow):
     def write(self, text):
         self._append_terminal_output.emit(QString.fromUtf8(text))
         
+    def flush(self): pass
         
+        
+    #abort handler
+    @pyqtSlot()
+    def _abort_analysis(self):
+        if self._pipeline_thread.isRunning():
+            self._pipeline_thread_stop.emit()
+            self._pipeline_thread.wait()
+    
+    
     #close handler
-    #@pyqtSlot(None, result=bool)
     def closeEvent(self, event):
         if self._pipeline_thread.isRunning():
             if QMessageBox.question(None, '', 'The analysis thread is still running. '
@@ -353,8 +396,7 @@ class DegenPrimerGUI(DegenPrimerConfig, QMainWindow):
                                     'Are you sure you want to quit?',
                                     QMessageBox.Yes | QMessageBox.No,
                                     QMessageBox.No) == QMessageBox.Yes:
-                self._pipeline_thread.terminate()
-                self._pipeline_thread.wait()
+                del self._pipeline_thread
                 event.accept()
             else: 
                 event.ignore()

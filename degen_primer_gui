@@ -22,20 +22,31 @@ Created on Jul 29, 2012
 
 import sys
 import signal
+import argparse
 from PyQt4.QtCore import QTimer
 from PyQt4.QtGui import QApplication
 from DegenPrimerGUI.DegenPrimerGUI import DegenPrimerGUI
 
 def sig_handler(signal, frame):
     QApplication.closeAllWindows()
+   
 
 if __name__ == '__main__':
     #setup signal handler
     signal.signal(signal.SIGINT,  sig_handler)
     signal.signal(signal.SIGTERM, sig_handler)
     signal.signal(signal.SIGQUIT, sig_handler)
+    #parse command-line arguments
+    parser = argparse.ArgumentParser('GUI for DegenPrimer')
+    conf_group = parser.add_argument_group('Preset configuration')
+    conf_group.add_argument('config_file', metavar='file.cfg', 
+                            type=str, nargs='?',
+                            help='Path to the analysis configuration file.')
+    args = parser.parse_args()
+    config_file = args.config_file
     #setup main application
     app = QApplication(sys.argv)
+    QApplication.setApplicationName('DegenPrimer')
     #let python interpreter run each 500ms to catch a signal
     timer = QTimer()
     timer.start(500)
@@ -47,5 +58,8 @@ if __name__ == '__main__':
     sys.stderr = degen_primer_main
     #show main window
     degen_primer_main.show()
+    #if configuration file is provided, parse it
+    if config_file:
+        degen_primer_main.load_config(config_file)
     #run
     sys.exit(app.exec_())
