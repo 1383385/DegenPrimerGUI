@@ -20,27 +20,60 @@ Created on Jul 27, 2012
 
 
 import os
+#import errno
+#from Queue import Empty
+#from multiprocessing.managers import BaseManager
 from PyQt4 import uic
-from PyQt4.QtCore import QObject, QThread, QString, pyqtSlot, pyqtSignal
+from PyQt4.QtCore import QObject, QThread, QString, pyqtSlot, pyqtSignal, QSettings
 from PyQt4.QtGui import QApplication, QMainWindow, QFormLayout, QGroupBox, \
 QLineEdit, QDoubleSpinBox, QSpinBox, QCheckBox, QFileDialog, QPushButton, \
 QPlainTextEdit, QFont, QMessageBox, QTextCursor
 from DegenPrimer.DegenPrimerConfig import DegenPrimerConfig
-from DegenPrimer.DegenPrimerPipeline import DegenPrimerPipeline
+from DegenPrimer.DegenPrimerPipeline import DegenPrimerPipeline #, capture_to_queue
 from DegenPrimer.StringTools import wrap_text, print_exception
 import DegenPrimerUI_rc #qt resources for the UI
 
 
 class DegenPrimerPipelineThread(QThread):
     '''Wrapper for degen_primer_pipeline with multi-threading'''
+#    #manager class for DegenPrimerPipeline 
+#    class PipelineManager(BaseManager): pass
+#    PipelineManager.register('DegenPrimerPipeline', DegenPrimerPipeline)
+#    
+#    
+#    #simpliest thread to launch pipeline's run method
+#    class PipelineThread(QThread):
+#        def __init__(self, pipeline, args):
+#            QThread.__init__(self)
+#            self._args     = args
+#            self._pipeline = pipeline
+#            self._success  = 1
+#            
+#        def run(self):
+#            print 'Calling Pipeline.run...'
+#            try: self._success = self._pipeline.run(self._args)
+#            except Exception, e:
+#                print e.message
+#                return
+#            print 'Pipeline.run has finished.'
+#            
+#        @property
+#        def success(self): return self._success
+#    #end class
+    
+    
+    #signals for the main thread
     _lock_buttons   = pyqtSignal(bool)
     _show_results   = pyqtSignal()
     
     
     def __init__(self, args):
         QThread.__init__(self)
-        self._args  = args
+        self._args     = args
+#        self._manager  = None
+#        self._queue    = None
         self._pipeline = DegenPrimerPipeline()
+#        self._run      = False
         #connect signals
         self._lock_buttons.connect(self._args.lock_buttons)
         self._show_results.connect(self._args.show_results)
@@ -49,6 +82,11 @@ class DegenPrimerPipelineThread(QThread):
     
     def __del__(self):
         self._pipeline.terminate()
+#        self._run = False
+#        if self._pipeline != None:
+#            del self._pipeline
+#        if self._manager != None:
+#            self._manager.shutdown()
         self.wait()
     #end def
     
@@ -56,6 +94,34 @@ class DegenPrimerPipelineThread(QThread):
     def run(self):
         self._lock_buttons.emit(True)
         success = -1
+#        self._run = True
+#        #lock GUI buttons
+#        self._lock_buttons.emit(True)
+#        #pipeline manager and it's output queue
+#        with capture_to_queue() as out:
+#            self._manager = self.PipelineManager()
+#            self._manager.start()
+#        self._queue = out.queue
+#        #generate pipeline and launch it in a thread
+#        self._pipeline  = self._manager.DegenPrimerPipeline()
+#        pipeline_thread = self.PipelineThread(self._pipeline, self._args)
+#        pipeline_thread.start()
+#        #listen to it's output
+#        while self._run:
+#            try:
+#                print self._queue.get(True, 1)
+#            except Empty:
+#                if not pipeline_thread.isRunning():
+#                    break
+#                continue
+#            except IOError, e:
+#                if e.errno == errno.EINTR:
+#                    continue
+#                else:
+#                    print e.message
+#                    self.stop()
+#                    break
+#        pipeline_thread.wait()
         try:
             success = self._pipeline.run(self._args)
         except Exception, e:
@@ -72,6 +138,18 @@ class DegenPrimerPipelineThread(QThread):
     def stop(self):
         self._pipeline.terminate()
         self.wait()
+#        if not self._run: return
+#        #set run flag to False
+#        self._run = False
+#        #delete pipeline proxy object
+#        if self._pipeline != None:
+#            del self._pipeline
+#            self._pipeline = None
+#        #shutdown pipeline manager
+#        if self._manager != None:
+#            self._manager.shutdown()
+#            del self._manager
+#            self._manager = None
 #end class
 
 
@@ -135,11 +213,23 @@ class DegenPrimerGUI(DegenPrimerConfig, QMainWindow):
     _append_terminal_output = pyqtSignal(str)
     #signal to abort computations
     _pipeline_thread_stop   = pyqtSignal() #TODO: need to find a way to abort computations cleanly
+    
+    #settings
+    _config_file_dir_setting = 'GUI/last_config_directory'
+    _working_dir_setting     = 'GUI/last_working_directory'
+    _sidebar_urls_setting    = 'GUI/sidebar_urls'
+
 
     def __init__(self):
         #parent's constructors
         DegenPrimerConfig.__init__(self)
         QMainWindow.__init__(self)
+        #session independent configuration
+        self._settings = QSettings()
+        self._config_file_dir = ''
+        self._working_dir     = ''
+        self._sidebar_urls    = ''
+        self._load_settings()
         #setup configuration group
         self._groups[self._config_option['section']] = 'Configuration'
         #try to load UI
@@ -280,6 +370,18 @@ class DegenPrimerGUI(DegenPrimerConfig, QMainWindow):
         self._fields_empty = False
     #end def
     
+    
+    def _load_settings(self):
+        self._config_file_dir = str(self._settings.value(self._config_file_dir_setting, defaultValue=''))
+        self._working_dir     = str(self._settings.value(self._working_dir_setting, defaultValue=''))
+        self._sidebar_urls    = list(self._settings.value(self._sidebar_urls_setting, defaultValue=[]).toList())
+    #end def
+
+
+    @pyqtSlot('QString')
+    def _set_working_dir(self):
+        pass
+
     
     @pyqtSlot('QString')
     def _load_config(self, config_file):
