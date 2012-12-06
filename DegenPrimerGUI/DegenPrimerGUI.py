@@ -24,7 +24,8 @@ import os
 #from Queue import Empty
 #from multiprocessing.managers import BaseManager
 from PyQt4 import uic
-from PyQt4.QtCore import QObject, QThread, QString, pyqtSlot, pyqtSignal, QSettings
+from PyQt4.QtCore import QObject, QThread, QString, pyqtSlot, pyqtSignal, \
+QSettings
 from PyQt4.QtGui import QApplication, QMainWindow, QFormLayout, QGroupBox, \
 QLineEdit, QDoubleSpinBox, QSpinBox, QCheckBox, QFileDialog, QPushButton, \
 QPlainTextEdit, QFont, QMessageBox, QTextCursor
@@ -214,22 +215,23 @@ class DegenPrimerGUI(DegenPrimerConfig, QMainWindow):
     #signal to abort computations
     _pipeline_thread_stop   = pyqtSignal() #TODO: need to find a way to abort computations cleanly
     
-    #settings
-    _config_file_dir_setting = 'GUI/last_config_directory'
-    _working_dir_setting     = 'GUI/last_working_directory'
-    _sidebar_urls_setting    = 'GUI/sidebar_urls'
-
-
+    
+    #utility classmethods
+    @classmethod
+    def _trigger(cls, func, *f_args, **f_kwargs):
+        '''wrap particular function call into a trigger function'''
+        def wrapped(*args, **kwargs):
+            return func(*f_args, **f_kwargs)
+        return wrapped
+    
+    
+    #constructor
     def __init__(self):
         #parent's constructors
         DegenPrimerConfig.__init__(self)
         QMainWindow.__init__(self)
         #session independent configuration
         self._settings = QSettings()
-        self._config_file_dir = ''
-        self._working_dir     = ''
-        self._sidebar_urls    = ''
-        self._load_settings()
         #setup configuration group
         self._groups[self._config_option['section']] = 'Configuration'
         #try to load UI
@@ -267,6 +269,8 @@ class DegenPrimerGUI(DegenPrimerConfig, QMainWindow):
         #pipeline thread
         self._pipeline_thread = DegenPrimerPipelineThread(self)
         self._pipeline_thread_stop.connect(self._pipeline_thread.stop)
+        #restore GUI state
+        self._restore_mainwindow_state()
     #end def
     
     
@@ -296,6 +300,12 @@ class DegenPrimerGUI(DegenPrimerConfig, QMainWindow):
             field = QLineEdit(self.centralWidget())
             label = QPushButton(option['option'].replace('_', ' '), self.centralWidget())
             file_dialog = QFileDialog(self.centralWidget(), option['option'].replace('_', ' '))
+            #try to restore dialog state
+            self._restore_dialog_state(option, file_dialog)
+            #prepare a slot to save state
+            save_state_slot = self._trigger(self._save_dialog_state, option, file_dialog)
+            file_dialog.currentChanged.connect(save_state_slot)
+            #button-label
             label.clicked.connect(file_dialog.show)
             if option['field_type'] == 'file':
                 if self._multiple_args(option):
@@ -308,6 +318,7 @@ class DegenPrimerGUI(DegenPrimerConfig, QMainWindow):
                 file_dialog.setFileMode(QFileDialog.Directory)
                 file_dialog.setOption(QFileDialog.ShowDirsOnly, True)
                 file_dialog.fileSelected.connect(field.setText)
+                field.textChanged.connect(file_dialog.setDirectory)
         if field:
             #setup group box if necessary
             if option['section'] not in self._group_boxes:
@@ -319,6 +330,49 @@ class DegenPrimerGUI(DegenPrimerConfig, QMainWindow):
             self._fields[option['option']] = field
             self._group_boxes[option['section']].addRow(label, field)
     #end def
+    
+
+    def _save_dialog_state(self, option, dialog):
+        dialog_state = dialog.saveState()
+        dialog_dir   = dialog.directory()
+        sidebar_urls = dialog.sidebarUrls()
+        self._settings.setValue(option['option']+'/dialog_state', dialog_state)
+        self._settings.setValue(option['option']+'/directory', dialog_dir.absolutePath())
+        self._settings.setValue('sidebar_urls', sidebar_urls)
+    #end def
+
+    
+    def _restore_dialog_state(self, option, dialog):
+        dialog_state = self._settings.value(option['option']+'/dialog_state', defaultValue=None)
+        if dialog_state != None:
+            dialog.restoreState(dialog_state.toByteArray())
+        dialog_dir   = self._settings.value(option['option']+'/directory', defaultValue=None)
+        if dialog_dir != None:
+            dialog.setDirectory(dialog_dir.toString())
+        sidebar_urls = self._settings.value('sidebar_urls', defaultValue=None)
+        if sidebar_urls != None:
+            urls = [url.toUrl() for url in sidebar_urls.toList()]
+            dialog.setSidebarUrls(urls)
+    #end def
+    
+    
+    def _save_mainwindow_state(self):
+        self._settings.beginGroup('main_window')
+        self._settings.setValue('size', self.size())
+        self._settings.setValue('splitter_state', self.terminalSplitter.saveState())
+        self._settings.endGroup()
+    #end def
+    
+    
+    def _restore_mainwindow_state(self):
+        self._settings.beginGroup('main_window')
+        size = self._settings.value('size', defaultValue=None)
+        if size != None:
+            self.resize(size.toSize())
+        splitter_state = self._settings.value('splitter_state', defaultValue=None)
+        if splitter_state != None:
+            self.terminalSplitter.restoreState(splitter_state.toByteArray())
+        self._settings.endGroup()
 
 
     def _override_option(self, option):
@@ -370,18 +424,6 @@ class DegenPrimerGUI(DegenPrimerConfig, QMainWindow):
         self._fields_empty = False
     #end def
     
-    
-    def _load_settings(self):
-        self._config_file_dir = str(self._settings.value(self._config_file_dir_setting, defaultValue=''))
-        self._working_dir     = str(self._settings.value(self._working_dir_setting, defaultValue=''))
-        self._sidebar_urls    = list(self._settings.value(self._sidebar_urls_setting, defaultValue=[]).toList())
-    #end def
-
-
-    @pyqtSlot('QString')
-    def _set_working_dir(self):
-        pass
-
     
     @pyqtSlot('QString')
     def _load_config(self, config_file):
@@ -499,10 +541,11 @@ class DegenPrimerGUI(DegenPrimerConfig, QMainWindow):
                                     QMessageBox.Yes | QMessageBox.No,
                                     QMessageBox.No) == QMessageBox.Yes:
                 del self._pipeline_thread
-                event.accept()
             else: 
                 event.ignore()
-        else: event.accept()
+                return
+        self._save_mainwindow_state() 
+        event.accept()
     #end def
 #end class
 
