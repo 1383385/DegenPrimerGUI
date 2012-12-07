@@ -385,13 +385,16 @@ class DegenPrimerGUI(DegenPrimerConfig, QMainWindow):
     
     @pyqtSlot()
     def _analyse(self):
+        #clear terminal and results
         self.terminalOutput.clear()
         self._clear_results()
+        #configuration file and working directory
         self._config_file = unicode(self._fields[self._config_option['option']].text())
         cwdir_field = self._fields[self._cwdir_option['option']]
         cwdir = unicode(cwdir_field.text())
         while not os.path.isdir(cwdir):
             file_dialog = QFileDialog(None, 'Select a directory to save reports to...')
+            self._restore_dialog_state(self._cwdir_option, file_dialog)
             file_dialog.setFileMode(QFileDialog.Directory)
             file_dialog.setOption(QFileDialog.ShowDirsOnly, True)
             file_dialog.setModal(True)
@@ -399,12 +402,17 @@ class DegenPrimerGUI(DegenPrimerConfig, QMainWindow):
             file_dialog.exec_()
             cwdir = unicode(cwdir_field.text())
         os.chdir(cwdir)
+        #load configuration
         print 'Current directory is %s\n' % os.getcwd()
         try:
             self.parse_configuration(self._config_file)
         except ValueError, e:
             self.write(e.message)
             return
+        #reset do_blast and run_ipcress flags in the GUI
+        self._fields['do_blast'].setChecked(False)
+        self._fields['run_ipcress'].setChecked(False)
+        #start pipeline thread
         self._pipeline_thread.start()
     #end def
     
