@@ -20,9 +20,7 @@ Created on Jul 27, 2012
 
 
 import os
-#import errno
-#from Queue import Empty
-#from multiprocessing.managers import BaseManager
+import errno
 from PyQt4 import uic
 from PyQt4.QtCore import QObject, QThread, QString, pyqtSlot, pyqtSignal, \
 QSettings
@@ -37,31 +35,6 @@ import DegenPrimerUI_rc #qt resources for the UI
 
 class DegenPrimerPipelineThread(QThread):
     '''Wrapper for degen_primer_pipeline with multi-threading'''
-#    #manager class for DegenPrimerPipeline 
-#    class PipelineManager(BaseManager): pass
-#    PipelineManager.register('DegenPrimerPipeline', DegenPrimerPipeline)
-#    
-#    
-#    #simpliest thread to launch pipeline's run method
-#    class PipelineThread(QThread):
-#        def __init__(self, pipeline, args):
-#            QThread.__init__(self)
-#            self._args     = args
-#            self._pipeline = pipeline
-#            self._success  = 1
-#            
-#        def run(self):
-#            print 'Calling Pipeline.run...'
-#            try: self._success = self._pipeline.run(self._args)
-#            except Exception, e:
-#                print e.message
-#                return
-#            print 'Pipeline.run has finished.'
-#            
-#        @property
-#        def success(self): return self._success
-#    #end class
-    
     
     #signals for the main thread
     _lock_buttons   = pyqtSignal(bool)
@@ -71,11 +44,7 @@ class DegenPrimerPipelineThread(QThread):
     def __init__(self, args):
         QThread.__init__(self)
         self._args     = args
-#        self._manager  = None
-#        self._queue    = None
         self._pipeline = DegenPrimerPipeline()
-#        self._run      = False
-        #connect signals
         self._lock_buttons.connect(self._args.lock_buttons)
         self._show_results.connect(self._args.show_results)
     #end def
@@ -83,54 +52,28 @@ class DegenPrimerPipelineThread(QThread):
     
     def __del__(self):
         self._pipeline.terminate()
-#        self._run = False
-#        if self._pipeline != None:
-#            del self._pipeline
-#        if self._manager != None:
-#            self._manager.shutdown()
-        self.wait()
     #end def
     
     
     def run(self):
         self._lock_buttons.emit(True)
-        success = -1
-#        self._run = True
-#        #lock GUI buttons
-#        self._lock_buttons.emit(True)
-#        #pipeline manager and it's output queue
-#        with capture_to_queue() as out:
-#            self._manager = self.PipelineManager()
-#            self._manager.start()
-#        self._queue = out.queue
-#        #generate pipeline and launch it in a thread
-#        self._pipeline  = self._manager.DegenPrimerPipeline()
-#        pipeline_thread = self.PipelineThread(self._pipeline, self._args)
-#        pipeline_thread.start()
-#        #listen to it's output
-#        while self._run:
-#            try:
-#                print self._queue.get(True, 1)
-#            except Empty:
-#                if not pipeline_thread.isRunning():
-#                    break
-#                continue
-#            except IOError, e:
-#                if e.errno == errno.EINTR:
-#                    continue
-#                else:
-#                    print e.message
-#                    self.stop()
-#                    break
-#        pipeline_thread.wait()
+        success = False
         try:
             success = self._pipeline.run(self._args)
+        #EOF means that some subroutine was terminated in the Manager process
+        except EOFError: pass
+        #IO code=4 means the same
+        except IOError, e:
+            if e.errno == errno.EINTR: pass
+            else:
+                self._pipeline.terminate()
+                print '\nException has occured while executing DegenPrimer Pipeline. Please, try again.'
+                print_exception(e)
         except Exception, e:
             self._pipeline.terminate()
             print '\nException has occured while executing DegenPrimer Pipeline. Please, try again.'
             print_exception(e)
-        if success == 0:
-            self._show_results.emit()
+        if success: self._show_results.emit()
         self._lock_buttons.emit(False)
     #end def
     
@@ -138,19 +81,6 @@ class DegenPrimerPipelineThread(QThread):
     @pyqtSlot()
     def stop(self):
         self._pipeline.terminate()
-        self.wait()
-#        if not self._run: return
-#        #set run flag to False
-#        self._run = False
-#        #delete pipeline proxy object
-#        if self._pipeline != None:
-#            del self._pipeline
-#            self._pipeline = None
-#        #shutdown pipeline manager
-#        if self._manager != None:
-#            self._manager.shutdown()
-#            del self._manager
-#            self._manager = None
 #end class
 
 
@@ -213,7 +143,7 @@ class DegenPrimerGUI(DegenPrimerConfig, QMainWindow):
     #stdout/err catcher signal
     _append_terminal_output = pyqtSignal(str)
     #signal to abort computations
-    _pipeline_thread_stop   = pyqtSignal() #TODO: need to find a way to abort computations cleanly
+    _pipeline_thread_stop   = pyqtSignal()
     
     
     #utility classmethods
@@ -485,8 +415,8 @@ class DegenPrimerGUI(DegenPrimerConfig, QMainWindow):
     def lock_buttons(self, lock=True):
         self.analyseButton.setEnabled(not lock)
         self.resetButton.setEnabled(not lock)
-#        if lock: self.abortButton.show()
-#        else: self.abortButton.hide()
+        if lock: self.abortButton.show()
+        else: self.abortButton.hide()
     #end def
     
     
@@ -529,7 +459,6 @@ class DegenPrimerGUI(DegenPrimerConfig, QMainWindow):
     def _abort_analysis(self):
         if self._pipeline_thread.isRunning():
             self._pipeline_thread_stop.emit()
-            self._pipeline_thread.wait()
     
     
     #close handler
