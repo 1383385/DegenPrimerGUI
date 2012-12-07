@@ -20,28 +20,31 @@ Created on Jul 27, 2012
 
 
 import os
+import errno
 from PyQt4 import uic
-from PyQt4.QtCore import QObject, QThread, QString, pyqtSlot, pyqtSignal
+from PyQt4.QtCore import QObject, QThread, QString, pyqtSlot, pyqtSignal, \
+QSettings
 from PyQt4.QtGui import QApplication, QMainWindow, QFormLayout, QGroupBox, \
 QLineEdit, QDoubleSpinBox, QSpinBox, QCheckBox, QFileDialog, QPushButton, \
 QPlainTextEdit, QFont, QMessageBox, QTextCursor
 from DegenPrimer.DegenPrimerConfig import DegenPrimerConfig
-from DegenPrimer.DegenPrimerPipeline import DegenPrimerPipeline
+from DegenPrimer.DegenPrimerPipeline import DegenPrimerPipeline #, capture_to_queue
 from DegenPrimer.StringTools import wrap_text, print_exception
 import DegenPrimerUI_rc #qt resources for the UI
 
 
 class DegenPrimerPipelineThread(QThread):
     '''Wrapper for degen_primer_pipeline with multi-threading'''
+    
+    #signals for the main thread
     _lock_buttons   = pyqtSignal(bool)
     _show_results   = pyqtSignal()
     
     
     def __init__(self, args):
         QThread.__init__(self)
-        self._args  = args
+        self._args     = args
         self._pipeline = DegenPrimerPipeline()
-        #connect signals
         self._lock_buttons.connect(self._args.lock_buttons)
         self._show_results.connect(self._args.show_results)
     #end def
@@ -49,21 +52,28 @@ class DegenPrimerPipelineThread(QThread):
     
     def __del__(self):
         self._pipeline.terminate()
-        self.wait()
     #end def
     
     
     def run(self):
         self._lock_buttons.emit(True)
-        success = -1
+        success = False
         try:
             success = self._pipeline.run(self._args)
+        #EOF means that some subroutine was terminated in the Manager process
+        except EOFError: pass
+        #IO code=4 means the same
+        except IOError, e:
+            if e.errno == errno.EINTR: pass
+            else:
+                self._pipeline.terminate()
+                print '\nException has occured while executing DegenPrimer Pipeline. Please, try again.'
+                print_exception(e)
         except Exception, e:
             self._pipeline.terminate()
             print '\nException has occured while executing DegenPrimer Pipeline. Please, try again.'
             print_exception(e)
-        if success == 0:
-            self._show_results.emit()
+        if success: self._show_results.emit()
         self._lock_buttons.emit(False)
     #end def
     
@@ -71,7 +81,6 @@ class DegenPrimerPipelineThread(QThread):
     @pyqtSlot()
     def stop(self):
         self._pipeline.terminate()
-        self.wait()
 #end class
 
 
@@ -134,12 +143,25 @@ class DegenPrimerGUI(DegenPrimerConfig, QMainWindow):
     #stdout/err catcher signal
     _append_terminal_output = pyqtSignal(str)
     #signal to abort computations
-    _pipeline_thread_stop   = pyqtSignal() #TODO: need to find a way to abort computations cleanly
-
+    _pipeline_thread_stop   = pyqtSignal()
+    
+    
+    #utility classmethods
+    @classmethod
+    def _trigger(cls, func, *f_args, **f_kwargs):
+        '''wrap particular function call into a trigger function'''
+        def wrapped(*args, **kwargs):
+            return func(*f_args, **f_kwargs)
+        return wrapped
+    
+    
+    #constructor
     def __init__(self):
         #parent's constructors
         DegenPrimerConfig.__init__(self)
         QMainWindow.__init__(self)
+        #session independent configuration
+        self._settings = QSettings()
         #setup configuration group
         self._groups[self._config_option['section']] = 'Configuration'
         #try to load UI
@@ -177,6 +199,8 @@ class DegenPrimerGUI(DegenPrimerConfig, QMainWindow):
         #pipeline thread
         self._pipeline_thread = DegenPrimerPipelineThread(self)
         self._pipeline_thread_stop.connect(self._pipeline_thread.stop)
+        #restore GUI state
+        self._restore_mainwindow_state()
     #end def
     
     
@@ -206,6 +230,12 @@ class DegenPrimerGUI(DegenPrimerConfig, QMainWindow):
             field = QLineEdit(self.centralWidget())
             label = QPushButton(option['option'].replace('_', ' '), self.centralWidget())
             file_dialog = QFileDialog(self.centralWidget(), option['option'].replace('_', ' '))
+            #try to restore dialog state
+            self._restore_dialog_state(option, file_dialog)
+            #prepare a slot to save state
+            save_state_slot = self._trigger(self._save_dialog_state, option, file_dialog)
+            file_dialog.currentChanged.connect(save_state_slot)
+            #button-label
             label.clicked.connect(file_dialog.show)
             if option['field_type'] == 'file':
                 if self._multiple_args(option):
@@ -218,6 +248,7 @@ class DegenPrimerGUI(DegenPrimerConfig, QMainWindow):
                 file_dialog.setFileMode(QFileDialog.Directory)
                 file_dialog.setOption(QFileDialog.ShowDirsOnly, True)
                 file_dialog.fileSelected.connect(field.setText)
+                field.textChanged.connect(file_dialog.setDirectory)
         if field:
             #setup group box if necessary
             if option['section'] not in self._group_boxes:
@@ -229,6 +260,49 @@ class DegenPrimerGUI(DegenPrimerConfig, QMainWindow):
             self._fields[option['option']] = field
             self._group_boxes[option['section']].addRow(label, field)
     #end def
+    
+
+    def _save_dialog_state(self, option, dialog):
+        dialog_state = dialog.saveState()
+        dialog_dir   = dialog.directory()
+        sidebar_urls = dialog.sidebarUrls()
+        self._settings.setValue(option['option']+'/dialog_state', dialog_state)
+        self._settings.setValue(option['option']+'/directory', dialog_dir.absolutePath())
+        self._settings.setValue('sidebar_urls', sidebar_urls)
+    #end def
+
+    
+    def _restore_dialog_state(self, option, dialog):
+        dialog_state = self._settings.value(option['option']+'/dialog_state', defaultValue=None)
+        if dialog_state != None:
+            dialog.restoreState(dialog_state.toByteArray())
+        dialog_dir   = self._settings.value(option['option']+'/directory', defaultValue=None)
+        if dialog_dir != None:
+            dialog.setDirectory(dialog_dir.toString())
+        sidebar_urls = self._settings.value('sidebar_urls', defaultValue=None)
+        if sidebar_urls != None:
+            urls = [url.toUrl() for url in sidebar_urls.toList()]
+            dialog.setSidebarUrls(urls)
+    #end def
+    
+    
+    def _save_mainwindow_state(self):
+        self._settings.beginGroup('main_window')
+        self._settings.setValue('size', self.size())
+        self._settings.setValue('splitter_state', self.terminalSplitter.saveState())
+        self._settings.endGroup()
+    #end def
+    
+    
+    def _restore_mainwindow_state(self):
+        self._settings.beginGroup('main_window')
+        size = self._settings.value('size', defaultValue=None)
+        if size != None:
+            self.resize(size.toSize())
+        splitter_state = self._settings.value('splitter_state', defaultValue=None)
+        if splitter_state != None:
+            self.terminalSplitter.restoreState(splitter_state.toByteArray())
+        self._settings.endGroup()
 
 
     def _override_option(self, option):
@@ -341,8 +415,8 @@ class DegenPrimerGUI(DegenPrimerConfig, QMainWindow):
     def lock_buttons(self, lock=True):
         self.analyseButton.setEnabled(not lock)
         self.resetButton.setEnabled(not lock)
-#        if lock: self.abortButton.show()
-#        else: self.abortButton.hide()
+        if lock: self.abortButton.show()
+        else: self.abortButton.hide()
     #end def
     
     
@@ -385,7 +459,6 @@ class DegenPrimerGUI(DegenPrimerConfig, QMainWindow):
     def _abort_analysis(self):
         if self._pipeline_thread.isRunning():
             self._pipeline_thread_stop.emit()
-            self._pipeline_thread.wait()
     
     
     #close handler
@@ -397,10 +470,11 @@ class DegenPrimerGUI(DegenPrimerConfig, QMainWindow):
                                     QMessageBox.Yes | QMessageBox.No,
                                     QMessageBox.No) == QMessageBox.Yes:
                 del self._pipeline_thread
-                event.accept()
             else: 
                 event.ignore()
-        else: event.accept()
+                return
+        self._save_mainwindow_state() 
+        event.accept()
     #end def
 #end class
 

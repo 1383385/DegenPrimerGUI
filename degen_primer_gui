@@ -23,12 +23,17 @@ Created on Jul 29, 2012
 import sys
 import signal
 import argparse
+from time import sleep
 from PyQt4.QtCore import QTimer
 from PyQt4.QtGui import QApplication
 from DegenPrimerGUI.DegenPrimerGUI import DegenPrimerGUI
 
+
 def sig_handler(signal, frame):
     QApplication.closeAllWindows()
+    sleep(1)
+    sys.exit(1)
+#end def
    
 
 if __name__ == '__main__':
@@ -46,7 +51,8 @@ if __name__ == '__main__':
     config_file = args.config_file
     #setup main application
     app = QApplication(sys.argv)
-    QApplication.setApplicationName('DegenPrimer')
+    QApplication.setOrganizationName('DegenPrimer')
+    QApplication.setApplicationName('DegenPrimerGUI')
     #let python interpreter run each 500ms to catch a signal
     timer = QTimer()
     timer.start(500)
