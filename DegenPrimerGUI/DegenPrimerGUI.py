@@ -21,6 +21,7 @@ Created on Jul 27, 2012
 
 import os
 import errno
+from math import log, ceil, floor
 from PyQt4 import uic
 from PyQt4.QtCore import QObject, QThread, QString, pyqtSlot, pyqtSignal, \
 QSettings
@@ -214,12 +215,21 @@ class DegenPrimerGUI(DegenPrimerConfig, QMainWindow):
                 field_wrapper = LineEditWrapper(field)
         elif option['field_type'] == 'float':
             field = QDoubleSpinBox(self.centralWidget())
-            label = option['option'].replace('_', ' ')+(' (%s)' % option['metavar'])
+            label = option['option'].replace('_', ' ')
+            if option['metavar']:
+                label += (' (%s)' % option['metavar'])
             field.setMinimum(float(option['limits'][0]))
             field.setMaximum(float(option['limits'][1]))
+            if float(option['limits'][0]) > 0:
+                decimals = max(ceil(-1*log(option['limits'][0], 10)), 2)
+            else: decimals = 2
+            field.setDecimals(decimals)
+            field.setSingleStep(1.0/(10**ceil(decimals/2.0)))
         elif option['field_type'] == 'integer':
             field = QSpinBox(self.centralWidget())
-            label = option['option'].replace('_', ' ')+(' (%s)' % option['metavar'])
+            label = option['option'].replace('_', ' ')
+            if option['metavar']:
+                label += (' (%s)' % option['metavar'])
             field.setMinimum(int(option['limits'][0]))
             field.setMaximum(int(option['limits'][1]))
         elif option['field_type'] == 'boolean':
@@ -263,12 +273,13 @@ class DegenPrimerGUI(DegenPrimerConfig, QMainWindow):
     
 
     def _save_dialog_state(self, option, dialog):
-        dialog_state = dialog.saveState()
-        dialog_dir   = dialog.directory()
-        sidebar_urls = dialog.sidebarUrls()
-        self._settings.setValue(option['option']+'/dialog_state', dialog_state)
-        self._settings.setValue(option['option']+'/directory', dialog_dir.absolutePath())
-        self._settings.setValue('sidebar_urls', sidebar_urls)
+        self._settings.setValue(option['option']+'/dialog_state', 
+                                dialog.saveState())
+        self._settings.setValue(option['option']+'/size', 
+                                dialog.size())
+        self._settings.setValue(option['option']+'/directory', 
+                                dialog.directory().absolutePath())
+        self._settings.setValue('sidebar_urls', dialog.sidebarUrls())
     #end def
 
     
@@ -276,6 +287,9 @@ class DegenPrimerGUI(DegenPrimerConfig, QMainWindow):
         dialog_state = self._settings.value(option['option']+'/dialog_state', defaultValue=None)
         if dialog_state != None:
             dialog.restoreState(dialog_state.toByteArray())
+        dialog_size  = self._settings.value(option['option']+'/size', defaultValue=None)
+        if dialog_size != None:
+            dialog.resize(dialog_size.toSize())
         dialog_dir   = self._settings.value(option['option']+'/directory', defaultValue=None)
         if dialog_dir != None:
             dialog.setDirectory(dialog_dir.toString())
@@ -333,9 +347,7 @@ class DegenPrimerGUI(DegenPrimerConfig, QMainWindow):
         #update form fields
         for option in self._options:
             #get value
-            value = None
-            exec_line = ('value = self.%(option)s\n')
-            exec (exec_line % option)
+            value = self._unscale_value(option)
             #update field
             if option['field_type'] == 'string' \
             or option['field_type'] == 'file':
@@ -346,10 +358,10 @@ class DegenPrimerGUI(DegenPrimerConfig, QMainWindow):
                     self._fields[option['option']].findChild(LineEditWrapper).setText(value)
             elif option['field_type'] == 'float' \
             or   option['field_type'] == 'integer':
-                if not value: value = 0
+                if value is None: value = 0
                 self._fields[option['option']].setValue(value)
             elif option['field_type'] == 'boolean':
-                if not value: value = False
+                if value is None: value = False
                 self._fields[option['option']].setChecked(value)
         self._fields_empty = False
     #end def
@@ -385,13 +397,16 @@ class DegenPrimerGUI(DegenPrimerConfig, QMainWindow):
     
     @pyqtSlot()
     def _analyse(self):
+        #clear terminal and results
         self.terminalOutput.clear()
         self._clear_results()
+        #configuration file and working directory
         self._config_file = unicode(self._fields[self._config_option['option']].text())
         cwdir_field = self._fields[self._cwdir_option['option']]
         cwdir = unicode(cwdir_field.text())
         while not os.path.isdir(cwdir):
             file_dialog = QFileDialog(None, 'Select a directory to save reports to...')
+            self._restore_dialog_state(self._cwdir_option, file_dialog)
             file_dialog.setFileMode(QFileDialog.Directory)
             file_dialog.setOption(QFileDialog.ShowDirsOnly, True)
             file_dialog.setModal(True)
@@ -399,12 +414,17 @@ class DegenPrimerGUI(DegenPrimerConfig, QMainWindow):
             file_dialog.exec_()
             cwdir = unicode(cwdir_field.text())
         os.chdir(cwdir)
+        #load configuration
         print 'Current directory is %s\n' % os.getcwd()
         try:
             self.parse_configuration(self._config_file)
         except ValueError, e:
             self.write(e.message)
             return
+        #reset do_blast and run_ipcress flags in the GUI
+        self._fields['do_blast'].setChecked(False)
+        self._fields['run_ipcress'].setChecked(False)
+        #start pipeline thread
         self._pipeline_thread.start()
     #end def
     
