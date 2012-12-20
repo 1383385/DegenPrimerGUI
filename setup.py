@@ -52,7 +52,7 @@ rcc_file.close()
 #setup
 from distutils.core import setup
 setup(name='degen-primer-gui',
-      version='1.2',
+      version='1.3',
       description='Qt GUI for DegenPrimer',
       long_description=read('README'),
       license='GPL-3',
