@@ -112,7 +112,7 @@ class LineEditWrapper(QObject):
 class DegenPrimerGUI(DegenPrimerConfig, QMainWindow):
     '''Graphical User Interface for degen_primer'''
 
-    _ui_path = ('./', '/usr/local/share/degen_primer_gui/', '/usr/share/degen_primer/')
+    _ui_path = ('./', '/usr/local/share/degen_primer_gui/', '/usr/share/degen_primer_gui/')
     _ui_file        = 'DegenPrimerUI.ui'
     _config_option  = {'option':'config_file',
                                'section'   :'config',
