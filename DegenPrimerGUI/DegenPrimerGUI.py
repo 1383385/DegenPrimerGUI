@@ -180,8 +180,9 @@ class DegenPrimerGUI(DegenPrimerConfig, QMainWindow):
         self._fields      = dict()
         #config file chooser
         self._setup_option_field(self._config_option)
-        self._setup_option_field(self._cwdir_option)
         self._fields[self._config_option['option']].textChanged.connect(self._load_config)
+        self._setup_option_field(self._cwdir_option)
+        self._fields[self._cwdir_option['option']].textChanged.connect(self._change_cwdir)
         #all other options
         for option in self._options:
             self._setup_option_field(option)
@@ -370,10 +371,18 @@ class DegenPrimerGUI(DegenPrimerConfig, QMainWindow):
     @pyqtSlot('QString')
     def _load_config(self, config_file):
         self._fields_empty = True
-        self.parse_configuration(config_file)
         if config_file and os.path.exists(os.path.dirname(unicode(config_file))):
             self._fields[self._cwdir_option['option']].setText(QString.fromUtf8(os.path.dirname(unicode(config_file))))
+        self.parse_configuration(config_file)
     #end def
+    
+    
+    @pyqtSlot('QString')
+    def _change_cwdir(self, cwdir):
+        if cwdir and os.path.exists(cwdir):
+            os.chdir(cwdir)
+    #end def
+    
     
     def load_config(self, config_file):
         self._fields[self._config_option['option']].setText(QString.fromUtf8(unicode(config_file)))
