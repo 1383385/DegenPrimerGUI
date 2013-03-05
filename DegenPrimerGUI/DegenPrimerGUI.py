@@ -20,69 +20,17 @@ Created on Jul 27, 2012
 
 
 import os
-import errno
-from math import log, ceil, floor
+from math import log, ceil
 from PyQt4 import uic
-from PyQt4.QtCore import QObject, QThread, QString, pyqtSlot, pyqtSignal, \
+from PyQt4.QtCore import QObject, QString, pyqtSlot, pyqtSignal, \
 QSettings
 from PyQt4.QtGui import QApplication, QMainWindow, QFormLayout, QGroupBox, \
 QLineEdit, QDoubleSpinBox, QSpinBox, QCheckBox, QFileDialog, QPushButton, \
 QPlainTextEdit, QFont, QMessageBox, QTextCursor
 from DegenPrimer.DegenPrimerConfig import DegenPrimerConfig
-from DegenPrimer.DegenPrimerPipeline import DegenPrimerPipeline #, capture_to_queue
 from DegenPrimer.StringTools import wrap_text, print_exception
+from DegenPrimerPipelineThread import DegenPrimerPipelineThread
 import DegenPrimerUI_rc #qt resources for the UI
-
-
-class DegenPrimerPipelineThread(QThread):
-    '''Wrapper for degen_primer_pipeline with multi-threading'''
-    
-    #signals for the main thread
-    _lock_buttons   = pyqtSignal(bool)
-    _show_results   = pyqtSignal()
-    
-    
-    def __init__(self, args):
-        QThread.__init__(self)
-        self._args     = args
-        self._pipeline = DegenPrimerPipeline()
-        self._lock_buttons.connect(self._args.lock_buttons)
-        self._show_results.connect(self._args.show_results)
-    #end def
-    
-    
-    def __del__(self):
-        self._pipeline.terminate()
-    #end def
-    
-    
-    def run(self):
-        self._lock_buttons.emit(True)
-        success = False
-        try:
-            success = self._pipeline.run(self._args)
-        #EOF means that some subroutine was terminated in the Manager process
-        except EOFError: pass
-        #IO code=4 means the same
-        except IOError, e:
-            if e.errno == errno.EINTR: pass
-            else:
-                self._pipeline.terminate()
-                print '\nException has occured while executing DegenPrimer Pipeline. Please, try again.'
-                print_exception(e)
-        except Exception, e:
-            self._pipeline.terminate()
-            print '\nException has occured while executing DegenPrimer Pipeline. Please, try again.'
-            print_exception(e)
-        if success: self._show_results.emit()
-        self._lock_buttons.emit(False)
-    #end def
-    
-    
-    @pyqtSlot()
-    def stop(self):
-        self._pipeline.terminate()
-#end class
 
 
 class LineEditWrapper(QObject):
@@ -104,7 +52,8 @@ class LineEditWrapper(QObject):
     
     def text(self):
         text = unicode(self.parent().text())
-        return text.split(', ')
+        if text: return text.split(', ')
+        else: return ['']
     #end def
 #end class
 
@@ -201,9 +150,13 @@ class DegenPrimerGUI(DegenPrimerConfig, QMainWindow):
         #pipeline thread
         self._pipeline_thread = DegenPrimerPipelineThread(self)
         self._pipeline_thread_stop.connect(self._pipeline_thread.stop)
+        
         #restore GUI state
         self._restore_mainwindow_state()
     #end def
+    
+    @property
+    def config_file(self): return self._config_file
     
     
     def _setup_option_field(self, option):
@@ -371,16 +324,17 @@ class DegenPrimerGUI(DegenPrimerConfig, QMainWindow):
     @pyqtSlot('QString')
     def _load_config(self, config_file):
         self._fields_empty = True
-        if config_file and os.path.exists(os.path.dirname(unicode(config_file))):
-            self._fields[self._cwdir_option['option']].setText(QString.fromUtf8(os.path.dirname(unicode(config_file))))
+        if config_file and os.path.isfile(unicode(config_file)): 
+            config_dir = os.path.dirname(unicode(config_file)) or '.'
+            self._fields[self._cwdir_option['option']].setText(QString.fromUtf8(os.path.abspath(config_dir)))
         self.parse_configuration(config_file)
     #end def
     
     
     @pyqtSlot('QString')
     def _change_cwdir(self, cwdir):
-        if cwdir and os.path.exists(cwdir):
-            os.chdir(cwdir)
+        if cwdir and os.path.isdir(unicode(cwdir)):
+            os.chdir(unicode(cwdir))
     #end def
     
     
@@ -423,23 +377,24 @@ class DegenPrimerGUI(DegenPrimerConfig, QMainWindow):
             file_dialog.exec_()
             cwdir = unicode(cwdir_field.text())
         os.chdir(cwdir)
-        #load configuration
+        #load configuration from fields
         print 'Current directory is %s\n' % os.getcwd()
         try:
             self.parse_configuration(self._config_file)
         except ValueError, e:
             self.write(e.message)
             return
+        #save it to the file
+        self.save_configuration(silent=True)
         #reset do_blast and run_ipcress flags in the GUI
         self._fields['do_blast'].setChecked(False)
-        self._fields['run_ipcress'].setChecked(False)
         #start pipeline thread
         self._pipeline_thread.start()
     #end def
     
     
     #for pipeline thread to call
-    #lock analyse and reset buttons while analysis is running
+    #lock analyze and reset buttons while analysis is running
     @pyqtSlot(bool)
     def lock_buttons(self, lock=True):
         self.analyseButton.setEnabled(not lock)

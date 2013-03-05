@@ -20,7 +20,7 @@ Created on Jul 29, 2012
 '''
 
 
-import sys
+import sys, os
 import signal
 import argparse
 from time import sleep
@@ -29,7 +29,9 @@ from PyQt4.QtGui import QApplication
 from DegenPrimerGUI.DegenPrimerGUI import DegenPrimerGUI
 
 
+_pid = -1
 def sig_handler(signal, frame):
+    if _pid != os.getpid(): return
     QApplication.closeAllWindows()
     sleep(1)
     sys.exit(1)
@@ -37,6 +39,8 @@ def sig_handler(signal, frame):
    
 
 if __name__ == '__main__':
+    #set PID
+    _pid = os.getpid()
     #setup signal handler
     signal.signal(signal.SIGINT,  sig_handler)
     signal.signal(signal.SIGTERM, sig_handler)
