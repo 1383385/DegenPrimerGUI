@@ -73,7 +73,8 @@ class DegenPrimerGUI(DegenPrimerConfig, QMainWindow):
                                #type
                                'field_type':'file', #for gui
                                #default value
-                               'default'   :None}
+                               'default'   :None,
+                               'save'      :True}
     _cwdir_option   = {'option':'working_directory',
                                'section'   :'config',
                                #number of arguments
@@ -87,7 +88,8 @@ class DegenPrimerGUI(DegenPrimerConfig, QMainWindow):
                                #type
                                'field_type':'directory', #for gui
                                #default value
-                               'default'   :None}
+                               'default'   :None,
+                               'save'      :True}
 
 
     #stdout/err catcher signal
@@ -110,6 +112,8 @@ class DegenPrimerGUI(DegenPrimerConfig, QMainWindow):
         #parent's constructors
         DegenPrimerConfig.__init__(self)
         QMainWindow.__init__(self)
+        #working directory
+        self._cwdir = os.getcwd()
         #session independent configuration
         self._settings = QSettings()
         #setup configuration group
@@ -131,17 +135,18 @@ class DegenPrimerGUI(DegenPrimerConfig, QMainWindow):
         self._setup_option_field(self._config_option)
         self._fields[self._config_option['option']].textChanged.connect(self._load_config)
         self._setup_option_field(self._cwdir_option)
-        self._fields[self._cwdir_option['option']].textChanged.connect(self._change_cwdir)
+        self._fields[self._cwdir_option['option']].setText(QString.fromUtf8(os.path.abspath(self._cwdir)))
+        self._fields[self._cwdir_option['option']].editingFinished.connect(self._check_cwdir_field)
         #all other options
         for option in self._options:
             self._setup_option_field(option)
         #setup default values
         self._reset_fields()
-        #setup reset button
+        #setup buttons
+        self.reloadButton.clicked.connect(self.reload_config)
         self.resetButton.clicked.connect(self._reset_fields)
-        #setup analyse button
-        self.analyseButton.clicked.connect(self._analyse)
-        #setup abort button
+        self.saveButton.clicked.connect(self._save_config)
+        self.runButton.clicked.connect(self._analyse)
         self.abortButton.clicked.connect(self._abort_analysis)
         self.abortButton.hide()
         #setup terminal output
@@ -150,13 +155,9 @@ class DegenPrimerGUI(DegenPrimerConfig, QMainWindow):
         #pipeline thread
         self._pipeline_thread = DegenPrimerPipelineThread(self)
         self._pipeline_thread_stop.connect(self._pipeline_thread.stop)
-        
         #restore GUI state
         self._restore_mainwindow_state()
     #end def
-    
-    @property
-    def config_file(self): return self._config_file
     
     
     def _setup_option_field(self, option):
@@ -219,6 +220,9 @@ class DegenPrimerGUI(DegenPrimerConfig, QMainWindow):
                 group_box = QGroupBox(self._groups[option['section']], self.centralWidget())
                 self._group_boxes[option['section']] = QFormLayout(group_box)
                 self.configForm.addWidget(group_box)
+            #set style sheet
+            if not option['save']:
+                field.setStyleSheet('* { background: hsv(60, 50, 255) }')
             #add a field to the layout
             field.setToolTip(wrap_text(option['help'].replace('%%', '%')))
             self._fields[option['option']] = field
@@ -321,26 +325,106 @@ class DegenPrimerGUI(DegenPrimerConfig, QMainWindow):
     #end def
     
     
+    @pyqtSlot()
+    def reload_config(self): self._load_config(self._config_file)
+        
+    
+    def load_config(self, config_file):
+        old_config = unicode(self._fields[self._config_option['option']].text())
+        if config_file != old_config:
+            self._fields[self._config_option['option']].setText(QString.fromUtf8(unicode(config_file)))
+        else:
+            self._load_config(config_file)
+    #end def
+
+    
     @pyqtSlot('QString')
     def _load_config(self, config_file):
         self._fields_empty = True
+        self.terminalOutput.clear()
+        self._clear_results()
         if config_file and os.path.isfile(unicode(config_file)): 
-            config_dir = os.path.dirname(unicode(config_file)) or '.'
-            self._fields[self._cwdir_option['option']].setText(QString.fromUtf8(os.path.abspath(config_dir)))
-        self.parse_configuration(config_file)
+            self._cwdir = os.path.dirname(unicode(config_file)) or '.'
+            self._fields[self._cwdir_option['option']].setText(QString.fromUtf8(os.path.abspath(self._cwdir)))
+            os.chdir(self._cwdir)
+        self._config_file = config_file
+        self._parse_and_check()
     #end def
     
     
-    @pyqtSlot('QString')
-    def _change_cwdir(self, cwdir):
-        if cwdir and os.path.isdir(unicode(cwdir)):
-            os.chdir(unicode(cwdir))
+    @pyqtSlot()
+    def _save_config(self):
+        #try to parse configuration and check it
+        if not self._parse_and_check(): return
+        #set working directory
+        self._change_cwdir()
+        #save configuration to the file
+        self.save_configuration()
+        #load saved configuration
+        self.load_config(self._config_file)
+        print '\nasdf asdfasdf'
     #end def
     
     
-    def load_config(self, config_file):
-        self._fields[self._config_option['option']].setText(QString.fromUtf8(unicode(config_file)))
+    @pyqtSlot()
+    def _check_cwdir_field(self):
+        cwdir_field = self._fields[self._cwdir_option['option']]
+        cwdir = unicode(cwdir_field.text())
+        if cwdir:
+            if not os.path.isdir(cwdir):
+                print '\nNo such directory: %s\n' % cwdir
+            else:
+                if cwdir != self._cwdir:
+                    self._cwdir = cwdir
+                    print '\nWorking directory will be set to: %s\n' % self._cwdir
+    #end def
     
+    
+    def _change_cwdir(self):
+        cwdir_field = self._fields[self._cwdir_option['option']]
+        cwdir = unicode(cwdir_field.text())
+        while not os.path.isdir(cwdir):
+            file_dialog = QFileDialog(None, 'Select a directory to save reports to...')
+            self._restore_dialog_state(self._cwdir_option, file_dialog)
+            file_dialog.setFileMode(QFileDialog.Directory)
+            file_dialog.setOption(QFileDialog.ShowDirsOnly, True)
+            file_dialog.setModal(True)
+            file_dialog.fileSelected.connect(cwdir_field.setText)
+            file_dialog.exec_()
+            cwdir = unicode(cwdir_field.text())
+        self._cwdir = cwdir
+        os.chdir(self._cwdir)
+        print '\nWorking directory is %s\n' % os.getcwd()
+    #end def
+    
+    
+    def _parse_and_check(self):
+        #try to parse configuration and check it
+        try:
+            self.parse_configuration(self._config_file)
+        except ValueError, e:
+            self._fields_empty = False
+            self.write('\n'+e.message)
+            return False
+        return self.check_configuration()
+    #end def
+    
+    
+    @pyqtSlot()
+    def _analyse(self):
+        #try to parse configuration and check it
+        if not self._parse_and_check(): return
+        #set working directory
+        self._change_cwdir()
+        #save configuration to the file
+        self.save_configuration(silent=True)
+        #load saved configuration
+        self.load_config(self._config_file)
+        #start pipeline thread
+        self.terminalOutput.clear()
+        self._pipeline_thread.start()
+    #end def
+        
     
     def _clear_results(self):
         while self.mainTabs.count() > 1:
@@ -358,46 +442,12 @@ class DegenPrimerGUI(DegenPrimerConfig, QMainWindow):
     #end def
     
     
-    @pyqtSlot()
-    def _analyse(self):
-        #clear terminal and results
-        self.terminalOutput.clear()
-        self._clear_results()
-        #configuration file and working directory
-        self._config_file = unicode(self._fields[self._config_option['option']].text())
-        cwdir_field = self._fields[self._cwdir_option['option']]
-        cwdir = unicode(cwdir_field.text())
-        while not os.path.isdir(cwdir):
-            file_dialog = QFileDialog(None, 'Select a directory to save reports to...')
-            self._restore_dialog_state(self._cwdir_option, file_dialog)
-            file_dialog.setFileMode(QFileDialog.Directory)
-            file_dialog.setOption(QFileDialog.ShowDirsOnly, True)
-            file_dialog.setModal(True)
-            file_dialog.fileSelected.connect(cwdir_field.setText)
-            file_dialog.exec_()
-            cwdir = unicode(cwdir_field.text())
-        os.chdir(cwdir)
-        #load configuration from fields
-        print 'Current directory is %s\n' % os.getcwd()
-        try:
-            self.parse_configuration(self._config_file)
-        except ValueError, e:
-            self.write(e.message)
-            return
-        #save it to the file
-        self.save_configuration(silent=True)
-        #reset do_blast and run_ipcress flags in the GUI
-        self._fields['do_blast'].setChecked(False)
-        #start pipeline thread
-        self._pipeline_thread.start()
-    #end def
-    
-    
     #for pipeline thread to call
     #lock analyze and reset buttons while analysis is running
     @pyqtSlot(bool)
     def lock_buttons(self, lock=True):
-        self.analyseButton.setEnabled(not lock)
+        self.saveButton.setEnabled(not lock)
+        self.runButton.setEnabled(not lock)
         self.resetButton.setEnabled(not lock)
         if lock: self.abortButton.show()
         else: self.abortButton.hide()

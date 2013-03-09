@@ -21,6 +21,9 @@
    <layout class="QGridLayout" name="gridLayout">
     <item row="0" column="1">
      <widget class="QTabWidget" name="mainTabs">
+      <property name="toolTip">
+       <string>&lt;html&gt;&lt;head/&gt;&lt;body&gt;&lt;p&gt;Parameters which are used only in the consequent analysis are &lt;span style=&quot; font-weight:600;&quot;&gt;marked yellow.&lt;/span&gt; These will be reset as soon as you hit 'Run' and &lt;span style=&quot; font-weight:600;&quot;&gt;will not be saved&lt;/span&gt; to the configuration file.&lt;/p&gt;&lt;/body&gt;&lt;/html&gt;</string>
+      </property>
       <property name="currentIndex">
        <number>0</number>
       </property>
@@ -54,17 +57,27 @@
             </sizepolicy>
            </property>
            <layout class="QGridLayout" name="gridLayout_2">
-            <item row="1" column="3">
-             <widget class="QPushButton" name="analyseButton">
+            <item row="1" column="1">
+             <widget class="QPushButton" name="reloadButton">
               <property name="toolTip">
-               <string>&lt;html&gt;&lt;head/&gt;&lt;body&gt;&lt;p&gt;Analyse primers&lt;/p&gt;&lt;/body&gt;&lt;/html&gt;</string>
+               <string>&lt;html&gt;&lt;head/&gt;&lt;body&gt;&lt;p&gt;Reload currently selected configuration file.&lt;/p&gt;&lt;/body&gt;&lt;/html&gt;</string>
               </property>
               <property name="text">
-               <string>Analyse</string>
+               <string>Reload</string>
               </property>
              </widget>
             </item>
-            <item row="1" column="1">
+            <item row="1" column="6">
+             <widget class="QPushButton" name="runButton">
+              <property name="toolTip">
+               <string>&lt;html&gt;&lt;head/&gt;&lt;body&gt;&lt;p&gt;Run the analysis pipeline with the current parameters. This also saves these parameters into a configuration file.&lt;/p&gt;&lt;/body&gt;&lt;/html&gt;</string>
+              </property>
+              <property name="text">
+               <string>Run</string>
+              </property>
+             </widget>
+            </item>
+            <item row="1" column="3">
              <spacer name="horizontalSpacer">
               <property name="orientation">
                <enum>Qt::Horizontal</enum>
@@ -77,14 +90,7 @@
               </property>
              </spacer>
             </item>
-            <item row="1" column="0">
-             <widget class="QPushButton" name="resetButton">
-              <property name="text">
-               <string>Reset</string>
-              </property>
-             </widget>
-            </item>
-            <item row="0" column="0" colspan="4">
+            <item row="0" column="0" colspan="7">
              <widget class="QScrollArea" name="configScrollArea">
               <property name="sizePolicy">
                <sizepolicy hsizetype="Expanding" vsizetype="Expanding">
@@ -108,19 +114,44 @@
               </widget>
              </widget>
             </item>
-            <item row="1" column="2">
+            <item row="1" column="4">
              <widget class="QPushButton" name="abortButton">
+              <property name="toolTip">
+               <string>&lt;html&gt;&lt;head/&gt;&lt;body&gt;&lt;p&gt;Abort current analysis. This operation may take a second or two.&lt;/p&gt;&lt;/body&gt;&lt;/html&gt;</string>
+              </property>
               <property name="text">
                <string>Abort</string>
               </property>
              </widget>
             </item>
+            <item row="1" column="5">
+             <widget class="QPushButton" name="saveButton">
+              <property name="toolTip">
+               <string>&lt;html&gt;&lt;head/&gt;&lt;body&gt;&lt;p&gt;Save current configuration to a file inside the selected working directory.&lt;/p&gt;&lt;/body&gt;&lt;/html&gt;</string>
+              </property>
+              <property name="text">
+               <string>Save Configuration</string>
+              </property>
+             </widget>
+            </item>
+            <item row="1" column="2">
+             <widget class="QPushButton" name="resetButton">
+              <property name="toolTip">
+               <string>&lt;html&gt;&lt;head/&gt;&lt;body&gt;&lt;p&gt;Reset all the fields to the default state.&lt;/p&gt;&lt;/body&gt;&lt;/html&gt;</string>
+              </property>
+              <property name="text">
+               <string>Reset</string>
+              </property>
+             </widget>
+            </item>
            </layout>
-           <zorder>analyseButton</zorder>
+           <zorder>runButton</zorder>
            <zorder>horizontalSpacer</zorder>
-           <zorder>resetButton</zorder>
            <zorder>configScrollArea</zorder>
            <zorder>abortButton</zorder>
+           <zorder>saveButton</zorder>
+           <zorder>reloadButton</zorder>
+           <zorder>resetButton</zorder>
           </widget>
           <widget class="QPlainTextEdit" name="terminalOutput">
            <property name="sizePolicy">
@@ -150,6 +181,16 @@
    </layout>
   </widget>
  </widget>
+ <tabstops>
+  <tabstop>mainTabs</tabstop>
+  <tabstop>configScrollArea</tabstop>
+  <tabstop>runButton</tabstop>
+  <tabstop>saveButton</tabstop>
+  <tabstop>abortButton</tabstop>
+  <tabstop>reloadButton</tabstop>
+  <tabstop>terminalOutput</tabstop>
+  <tabstop>resetButton</tabstop>
+ </tabstops>
  <resources>
   <include location="DegenPrimerUI.qrc"/>
  </resources>

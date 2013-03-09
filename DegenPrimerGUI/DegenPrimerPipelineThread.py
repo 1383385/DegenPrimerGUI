@@ -137,7 +137,7 @@ class DegenPrimerPipelineThread(QThread):
                                                     stdout=subprocess.PIPE,
                                                     stderr=subprocess.PIPE)
         except OSError, e:
-            print '\nFaild to execute ipcress.'
+            print '\nFaild to execute DegenPrimer Pipeline subprocess.'
             print_exception(e)
             self._lock_buttons.emit(False)
             return
