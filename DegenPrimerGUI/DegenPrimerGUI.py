@@ -5,7 +5,7 @@
 # Free Software Foundation, either version 3 of the License, or
 # (at your option) any later version.
 # 
-# indicator_gddccontrol is distributed in the hope that it will be useful, but
+# degen_primer_gui is distributed in the hope that it will be useful, but
 # WITHOUT ANY WARRANTY; without even the implied warranty of
 # MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
 # See the GNU General Public License for more details.
@@ -20,91 +20,61 @@ Created on Jul 27, 2012
 
 
 import os
-from math import log, ceil
 from PyQt4 import uic
-from PyQt4.QtCore import QObject, QString, pyqtSlot, pyqtSignal, \
+from PyQt4.QtCore import QString, pyqtSlot, pyqtSignal, \
 QSettings
-from PyQt4.QtGui import QApplication, QMainWindow, QFormLayout, QGroupBox, \
-QLineEdit, QDoubleSpinBox, QSpinBox, QCheckBox, QFileDialog, QPushButton, \
-QPlainTextEdit, QFont, QMessageBox, QTextCursor
+from PyQt4.QtGui import QApplication, QMainWindow, QGroupBox, \
+QFileDialog, QPlainTextEdit, QFont, QMessageBox, QTextCursor, \
+QLabel, QGridLayout, QSizePolicy
 from DegenPrimer.DegenPrimerConfig import DegenPrimerConfig
-from DegenPrimer.StringTools import wrap_text, print_exception
+from DegenPrimer.Option import Option, OptionGroup
+from DegenPrimer.StringTools import print_exception
+from DegenPrimer.Primer import load_sequence
+from DegenPrimer.AnalysisTask import AnalysisTask
+from DegenPrimer.DBManagementTask import DBManagmentTask
+from DegenPrimer.OptimizationTask import OptimizationTask
 from DegenPrimerPipelineThread import DegenPrimerPipelineThread
+from Widgets import SequenceTableWidget
+from Field import Field
 import DegenPrimerUI_rc #qt resources for the UI
 
-
-class LineEditWrapper(QObject):
-    '''Wrapper for QLineEdit which overloads setText 
-    so as to make it accept list of strings'''
-    def __init__(self, parent):
-        if type(parent) != QLineEdit:
-            raise ValueError('Parent for LineEditWrapper should be an instance of QLineEdit.')
-        QObject.__init__(self, parent)
-    
-    @pyqtSlot('QStringList')
-    def setText(self, strings):
-        text = ''
-        for s in strings:
-            if text: text += ', '
-            text += unicode(s)
-        self.parent().setText(QString.fromUtf8(text))
-    #end def
-    
-    def text(self):
-        text = unicode(self.parent().text())
-        if text: return text.split(', ')
-        else: return ['']
-    #end def
-#end class
 
 
 class DegenPrimerGUI(DegenPrimerConfig, QMainWindow):
     '''Graphical User Interface for degen_primer'''
 
     _ui_path = ('./', '/usr/local/share/degen_primer_gui/', '/usr/share/degen_primer_gui/')
-    _ui_file        = 'DegenPrimerUI.ui'
-    _config_option  = {'option':'config_file',
-                               'section'   :'config',
-                               #number of arguments
-                               'nargs'     :1,
-                               #help string
-                               'help'      :'Path to a configuration file containing some '
-                                'or all of the options listed below.',
-                               #type
-                               'field_type':'file', #for gui
-                               #default value
-                               'default'   :None,
-                               'save'      :True}
-    _cwdir_option   = {'option':'working_directory',
-                               'section'   :'config',
-                               #number of arguments
-                               'nargs'     :1,
-                               #help string
-                               'help'      :'Directory where degen_primer will be executed '
-                               'and where all the reports will be saved. IMPORTANT: If you are loading '
-                               'configuration from a .cfg file, working directory is automatically set to '
-                               'the directory containing the file in order to maintain correct '
-                               'relative paths that it may contain.',
-                               #type
-                               'field_type':'directory', #for gui
-                               #default value
-                               'default'   :None,
-                               'save'      :True}
+    _ui_file      = 'DegenPrimerUI.ui'
+    
+    _config_option = Option(name='config',
+                            desc='Path to a configuration file containing some '
+                            'or all of the options listed below.',
+                            nargs=1,
+                            py_type=str,
+                            field_type='file',
+                            )
+    _cwdir_option  = Option(name='working_directory',
+                            desc='Directory where degen_primer will be executed '
+                            'and where all the reports will be saved. IMPORTANT: If you are loading '
+                            'configuration from a .cfg file, working directory is automatically set to '
+                            'the directory containing the file in order to maintain correct '
+                            'relative paths that it may contain.',
+                            nargs=1,
+                            py_type=str,
+                            field_type='directory',
+                            )
+    _config_group = OptionGroup('config_group',
+                                'Configuration and working directory',
+                                options=(_config_option,
+                                         _cwdir_option,
+                                         ))
 
+    _skip_options     = ['list_db']
 
     #stdout/err catcher signal
     _append_terminal_output = pyqtSignal(str)
     #signal to abort computations
     _pipeline_thread_stop   = pyqtSignal()
-    
-    
-    #utility classmethods
-    @classmethod
-    def _trigger(cls, func, *f_args, **f_kwargs):
-        '''wrap particular function call into a trigger function'''
-        def wrapped(*args, **kwargs):
-            return func(*f_args, **f_kwargs)
-        return wrapped
     
     
     #constructor
@@ -116,8 +86,6 @@ class DegenPrimerGUI(DegenPrimerConfig, QMainWindow):
         self._cwdir = os.getcwd()
         #session independent configuration
         self._settings = QSettings()
-        #setup configuration group
-        self._groups[self._config_option['section']] = 'Configuration'
         #try to load UI
         for path in self._ui_path:
             try:
@@ -128,18 +96,14 @@ class DegenPrimerGUI(DegenPrimerConfig, QMainWindow):
                 pass
         if not self.centralWidget(): 
             raise OSError('Error: unable to locate ui file.')
-        #assemble config form
-        self._group_boxes = dict()
-        self._fields      = dict()
-        #config file chooser
-        self._setup_option_field(self._config_option)
-        self._fields[self._config_option['option']].textChanged.connect(self._load_config)
-        self._setup_option_field(self._cwdir_option)
-        self._fields[self._cwdir_option['option']].setText(QString.fromUtf8(os.path.abspath(self._cwdir)))
-        self._fields[self._cwdir_option['option']].editingFinished.connect(self._check_cwdir_field)
+        #fields
+        Field.customize_field = self._customize_field
+        self._fields = dict()
+        #config and cwdir path choosers
+        self._build_group_gui(self._config_group)
         #all other options
-        for option in self._options:
-            self._setup_option_field(option)
+        self._seq_db_box = None
+        for group in self._option_groups: self._build_group_gui(group)
         #setup default values
         self._reset_fields()
         #setup buttons
@@ -148,7 +112,7 @@ class DegenPrimerGUI(DegenPrimerConfig, QMainWindow):
         self.saveButton.clicked.connect(self._save_config)
         self.runButton.clicked.connect(self._analyse)
         self.abortButton.clicked.connect(self._abort_analysis)
-        self.abortButton.hide()
+        self._show_run_specific_widgets(False)
         #setup terminal output
         self._append_terminal_output.connect(self.terminalOutput.insertPlainText)
         self.terminalOutput.textChanged.connect(self.terminalOutput.ensureCursorVisible)
@@ -160,103 +124,86 @@ class DegenPrimerGUI(DegenPrimerConfig, QMainWindow):
     #end def
     
     
-    def _setup_option_field(self, option):
-        field = None
-        label = ''
-        if option['field_type'] == 'string':
-            field = QLineEdit(self.centralWidget())
-            label = option['option'].replace('_', ' ')
-            if self._multiple_args(option):
-                field_wrapper = LineEditWrapper(field)
-        elif option['field_type'] == 'float':
-            field = QDoubleSpinBox(self.centralWidget())
-            label = option['option'].replace('_', ' ')
-            if option['metavar']:
-                label += (' (%s)' % option['metavar'])
-            field.setMinimum(float(option['limits'][0]))
-            field.setMaximum(float(option['limits'][1]))
-            if float(option['limits'][0]) > 0:
-                decimals = max(ceil(-1*log(option['limits'][0], 10)), 2)
-            else: decimals = 2
-            field.setDecimals(decimals)
-            field.setSingleStep(1.0/(10**ceil(decimals/2.0)))
-        elif option['field_type'] == 'integer':
-            field = QSpinBox(self.centralWidget())
-            label = option['option'].replace('_', ' ')
-            if option['metavar']:
-                label += (' (%s)' % option['metavar'])
-            field.setMinimum(int(option['limits'][0]))
-            field.setMaximum(int(option['limits'][1]))
-        elif option['field_type'] == 'boolean':
-            field = QCheckBox(self.centralWidget())
-            label = option['option'].replace('_', ' ')
-        elif option['field_type'] == 'file' \
-        or   option['field_type'] == 'directory':
-            field = QLineEdit(self.centralWidget())
-            label = QPushButton(option['option'].replace('_', ' '), self.centralWidget())
-            file_dialog = QFileDialog(self.centralWidget(), option['option'].replace('_', ' '))
-            #try to restore dialog state
-            self._restore_dialog_state(option, file_dialog)
-            #prepare a slot to save state
-            save_state_slot = self._trigger(self._save_dialog_state, option, file_dialog)
-            file_dialog.currentChanged.connect(save_state_slot)
-            #button-label
-            label.clicked.connect(file_dialog.show)
-            if option['field_type'] == 'file':
-                if self._multiple_args(option):
-                    file_dialog.setFileMode(QFileDialog.ExistingFiles)
-                    field_wrapper = LineEditWrapper(field)
-                    file_dialog.filesSelected.connect(field_wrapper.setText)
-                else:
-                    file_dialog.fileSelected.connect(field.setText)
+    def _field(self, option):
+        if option.name in self._fields:
+            return self._fields[option.name]
+        else: return None
+    #end def
+    
+        
+    def _set_field(self, option, value):
+        field = self._field(option)
+        if field is None: return
+        field.value = value
+    #end def
+    
+    
+    def _get_field(self, option):
+        field = self._field(option)
+        if field is None: return None
+        return field.value
+    #end def
+    
+    
+    def _customize_field(self, option, field, label):
+        #set style-sheets and fonts
+        if not option.save:
+            field.setStyleSheet('* { background: hsv(60, 50, 255) }')
+        if option.name == 'sequence':
+            font = QFont()
+            font.setFamily('Monospace')
+            field.setFont(font)
+            
+        #connect signals to slots
+        elif option.name == 'sequence_db':
+            field.textChanged.connect(self._list_seq_db)
+        elif option.name == 'config':
+            field.textChanged.connect(self._load_config)
+        elif option.name == 'working_directory':
+            field.setText(QString.fromUtf8(os.path.abspath(self._cwdir)))
+            field.editingFinished.connect(self._check_cwdir_field)
+    #end def
+    
+    
+    @pyqtSlot('QString')
+    def _list_seq_db(self, db_filename):
+        db_filename     = unicode(db_filename)
+        use_ids_field   = self._fields['use_sequences'].field
+        db_group_layout = self._seq_db_box.layout()
+        if db_filename and os.path.isfile(db_filename):
+            label = QLabel('Sequences in database', self.centralWidget())
+            label.setSizePolicy(QSizePolicy.Maximum, QSizePolicy.Maximum)
+            db_table_widget = SequenceTableWidget(self.centralWidget())
+            if db_table_widget.list_db(db_filename):
+                db_group_layout.addWidget(label, 0, 0)
+                db_group_layout.addWidget(db_table_widget, 0, 1)
+                db_table_widget.send_ids.connect(use_ids_field.setText)
+                use_ids_field.textChanged.connect(db_table_widget.set_ids)
+                db_table_widget.set_ids(', '.join(use_ids_field.text()))
+                db_table_widget.show()
             else:
-                file_dialog.setFileMode(QFileDialog.Directory)
-                file_dialog.setOption(QFileDialog.ShowDirsOnly, True)
-                file_dialog.fileSelected.connect(field.setText)
-                field.textChanged.connect(file_dialog.setDirectory)
-        if field:
-            #setup group box if necessary
-            if option['section'] not in self._group_boxes:
-                group_box = QGroupBox(self._groups[option['section']], self.centralWidget())
-                self._group_boxes[option['section']] = QFormLayout(group_box)
-                self.configForm.addWidget(group_box)
-            #set style sheet
-            if not option['save']:
-                field.setStyleSheet('* { background: hsv(60, 50, 255) }')
-            #add a field to the layout
-            field.setToolTip(wrap_text(option['help'].replace('%%', '%')))
-            self._fields[option['option']] = field
-            self._group_boxes[option['section']].addRow(label, field)
+                del db_table_widget
+                db_group_layout.addWidget(label, 0, 0)
+                db_group_layout.addWidget(QLabel('no sequences found', self.centralWidget()), 0, 1)
+        else:
+            db_table_widget = self.centralWidget().findChild(SequenceTableWidget)
+            if db_table_widget is None: return
+            db_table_label  = db_group_layout.itemAtPosition(0,0).widget()
+            if db_table_label is not None: db_table_label.deleteLater()
+            db_table_widget.deleteLater()
     #end def
     
-
-    def _save_dialog_state(self, option, dialog):
-        self._settings.setValue(option['option']+'/dialog_state', 
-                                dialog.saveState())
-        self._settings.setValue(option['option']+'/size', 
-                                dialog.size())
-        self._settings.setValue(option['option']+'/directory', 
-                                dialog.directory().absolutePath())
-        self._settings.setValue('sidebar_urls', dialog.sidebarUrls())
-    #end def
-
     
-    def _restore_dialog_state(self, option, dialog):
-        dialog_state = self._settings.value(option['option']+'/dialog_state', defaultValue=None)
-        if dialog_state != None:
-            dialog.restoreState(dialog_state.toByteArray())
-        dialog_size  = self._settings.value(option['option']+'/size', defaultValue=None)
-        if dialog_size != None:
-            dialog.resize(dialog_size.toSize())
-        dialog_dir   = self._settings.value(option['option']+'/directory', defaultValue=None)
-        if dialog_dir != None:
-            dialog.setDirectory(dialog_dir.toString())
-        sidebar_urls = self._settings.value('sidebar_urls', defaultValue=None)
-        if sidebar_urls != None:
-            urls = [url.toUrl() for url in sidebar_urls.toList()]
-            dialog.setSidebarUrls(urls)
+    def _build_group_gui(self, group):
+        grp_box    = QGroupBox(group.desc, self.configFormWidget)
+        grp_box.setLayout(QGridLayout())
+        if group.name == 'seq_db': self._seq_db_box = grp_box
+        for opt in group.options:
+            if opt.name in self._skip_options: continue
+            self._fields[opt.name] = Field(opt, grp_box)
+        self.configForm.addWidget(grp_box)
     #end def
-    
+            
     
     def _save_mainwindow_state(self):
         self._settings.beginGroup('main_window')
@@ -275,24 +222,18 @@ class DegenPrimerGUI(DegenPrimerConfig, QMainWindow):
         if splitter_state != None:
             self.terminalSplitter.restoreState(splitter_state.toByteArray())
         self._settings.endGroup()
-
-
+    #end def
+    
+    
     def _override_option(self, option):
         if self._fields_empty: return None
-        value_override = None
-        #update field
-        if option['field_type'] == 'string' \
-        or option['field_type'] == 'file':
-            if option['nargs'] == 1:
-                value_override = unicode(self._fields[option['option']].text())
-            else:
-                value_override = self._fields[option['option']].findChild(LineEditWrapper).text()
-        elif option['field_type'] == 'float' \
-        or   option['field_type'] == 'integer':
-            value_override = self._fields[option['option']].value()
-        elif option['field_type'] == 'boolean':
-            value_override = self._fields[option['option']].isChecked()
-        return value_override
+        return self._get_field(option)
+    #end def
+        
+    
+    def _update_fields(self):
+        for option in self._options:
+            self._set_field(option, self._unscaled_value(option))
     #end def
     
     
@@ -303,24 +244,7 @@ class DegenPrimerGUI(DegenPrimerConfig, QMainWindow):
             DegenPrimerConfig.parse_configuration(self, unicode(config_file))
         else: DegenPrimerConfig.parse_configuration(self)
         #update form fields
-        for option in self._options:
-            #get value
-            value = self._unscale_value(option)
-            #update field
-            if option['field_type'] == 'string' \
-            or option['field_type'] == 'file':
-                if not value: value = ''
-                if option['nargs'] == 1:
-                    self._fields[option['option']].setText(QString.fromUtf8(value))
-                else:
-                    self._fields[option['option']].findChild(LineEditWrapper).setText(value)
-            elif option['field_type'] == 'float' \
-            or   option['field_type'] == 'integer':
-                if value is None: value = 0
-                self._fields[option['option']].setValue(value)
-            elif option['field_type'] == 'boolean':
-                if value is None: value = False
-                self._fields[option['option']].setChecked(value)
+        self._update_fields()
         self._fields_empty = False
     #end def
     
@@ -329,10 +253,11 @@ class DegenPrimerGUI(DegenPrimerConfig, QMainWindow):
     def reload_config(self): self._load_config(self._config_file)
         
     
+    @pyqtSlot('QString')
     def load_config(self, config_file):
-        old_config = unicode(self._fields[self._config_option['option']].text())
+        old_config = self._get_field(self._config_option)
         if config_file != old_config:
-            self._fields[self._config_option['option']].setText(QString.fromUtf8(unicode(config_file)))
+            self._set_field(self._config_option, config_file)
         else:
             self._load_config(config_file)
     #end def
@@ -345,7 +270,8 @@ class DegenPrimerGUI(DegenPrimerConfig, QMainWindow):
         self._clear_results()
         if config_file and os.path.isfile(unicode(config_file)): 
             self._cwdir = os.path.dirname(unicode(config_file)) or '.'
-            self._fields[self._cwdir_option['option']].setText(QString.fromUtf8(os.path.abspath(self._cwdir)))
+            self._set_field(self._cwdir_option, 
+                            os.path.abspath(self._cwdir))
             os.chdir(self._cwdir)
         self._config_file = config_file
         self._parse_and_check()
@@ -362,14 +288,12 @@ class DegenPrimerGUI(DegenPrimerConfig, QMainWindow):
         self.save_configuration()
         #load saved configuration
         self.load_config(self._config_file)
-        print '\nasdf asdfasdf'
     #end def
     
     
     @pyqtSlot()
     def _check_cwdir_field(self):
-        cwdir_field = self._fields[self._cwdir_option['option']]
-        cwdir = unicode(cwdir_field.text())
+        cwdir = self._get_field(self._cwdir_option)
         if cwdir:
             if not os.path.isdir(cwdir):
                 print '\nNo such directory: %s\n' % cwdir
@@ -381,51 +305,64 @@ class DegenPrimerGUI(DegenPrimerConfig, QMainWindow):
     
     
     def _change_cwdir(self):
-        cwdir_field = self._fields[self._cwdir_option['option']]
-        cwdir = unicode(cwdir_field.text())
+        cwdir = self._get_field(self._cwdir_option)
         while not os.path.isdir(cwdir):
             file_dialog = QFileDialog(None, 'Select a directory to save reports to...')
             self._restore_dialog_state(self._cwdir_option, file_dialog)
             file_dialog.setFileMode(QFileDialog.Directory)
             file_dialog.setOption(QFileDialog.ShowDirsOnly, True)
             file_dialog.setModal(True)
-            file_dialog.fileSelected.connect(cwdir_field.setText)
+            file_dialog.fileSelected.connect(self._cwdir_option.field.setText)
             file_dialog.exec_()
-            cwdir = unicode(cwdir_field.text())
+            cwdir = self._get_field(self._cwdir_option)
         self._cwdir = cwdir
         os.chdir(self._cwdir)
         print '\nWorking directory is %s\n' % os.getcwd()
     #end def
     
     
-    def _parse_and_check(self):
-        #try to parse configuration and check it
+    def _parse(self):
         try:
             self.parse_configuration(self._config_file)
         except ValueError, e:
             self._fields_empty = False
             self.write('\n'+e.message)
             return False
-        return self.check_configuration()
+        return True
+    #end def
+    
+    
+    def _parse_and_check(self):
+        return self._parse() and AnalysisTask.check_options(self)
     #end def
     
     
     @pyqtSlot()
     def _analyse(self):
         #try to parse configuration and check it
-        if not self._parse_and_check(): return
-        #set working directory
-        self._change_cwdir()
-        #save configuration to the file
-        self.save_configuration(silent=True)
-        #load saved configuration
-        self.load_config(self._config_file)
-        #start pipeline thread
-        self.terminalOutput.clear()
-        self._pipeline_thread.start()
+        if not self._parse(): return
+        if DBManagmentTask.check_options(self) \
+        or OptimizationTask.check_options(self) \
+        or AnalysisTask.check_options(self):
+            self._pipeline_thread.pick_options()
+            if self._config_file:
+                self._change_cwdir()
+                self.save_configuration(silent=True)
+                self.load_config(self._config_file)
+            else: 
+                self.terminalOutput.clear()
+                self.reset_temporary_options()
+                self._update_fields()
+            self._pipeline_thread.start()
     #end def
-        
     
+    
+    @pyqtSlot(bool)
+    def update_timer(self, time_string):
+        self.elapsedTimeLineEdit.setText(time_string)
+    #end def
+    
+
     def _clear_results(self):
         while self.mainTabs.count() > 1:
             self.mainTabs.removeTab(1)
@@ -435,10 +372,20 @@ class DegenPrimerGUI(DegenPrimerConfig, QMainWindow):
     
     @pyqtSlot()
     def _reset_fields(self):
-        self._fields[self._config_option['option']].setText('')
+        self._set_field(self._config_option, '')
         self.terminalOutput.clear()
         self._clear_results()
         self._load_config(None)
+    #end def
+    
+    
+    def _show_run_specific_widgets(self, show=True):
+        widgets = [self.abortButton, 
+                   self.elapsedTimeLineEdit,
+                   self.elapsedTimeLabel,]
+        for widget in widgets:
+            if show: widget.show()
+            else: widget.hide()
     #end def
     
     
@@ -449,8 +396,8 @@ class DegenPrimerGUI(DegenPrimerConfig, QMainWindow):
         self.saveButton.setEnabled(not lock)
         self.runButton.setEnabled(not lock)
         self.resetButton.setEnabled(not lock)
-        if lock: self.abortButton.show()
-        else: self.abortButton.hide()
+        self.reloadButton.setEnabled(not lock)
+        self._show_run_specific_widgets(lock)
     #end def
     
     
@@ -478,6 +425,13 @@ class DegenPrimerGUI(DegenPrimerConfig, QMainWindow):
             self.mainTabs.addTab(report_widget, report[0])
         #alert main window
         QApplication.alert(self)
+    #end def
+    
+    
+    @pyqtSlot()
+    def reload_sequence_db(self):
+        self._list_seq_db(None)
+        self._list_seq_db(self.sequence_db)
     #end def
         
         

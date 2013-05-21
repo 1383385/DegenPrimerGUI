@@ -22,7 +22,7 @@
     <item row="0" column="1">
      <widget class="QTabWidget" name="mainTabs">
       <property name="toolTip">
-       <string>&lt;html&gt;&lt;head/&gt;&lt;body&gt;&lt;p&gt;Parameters which are used only in the consequent analysis are &lt;span style=&quot; font-weight:600;&quot;&gt;marked yellow.&lt;/span&gt; These will be reset as soon as you hit 'Run' and &lt;span style=&quot; font-weight:600;&quot;&gt;will not be saved&lt;/span&gt; to the configuration file.&lt;/p&gt;&lt;/body&gt;&lt;/html&gt;</string>
+       <string/>
       </property>
       <property name="currentIndex">
        <number>0</number>
@@ -56,7 +56,41 @@
              <verstretch>1</verstretch>
             </sizepolicy>
            </property>
+           <property name="toolTip">
+            <string/>
+           </property>
            <layout class="QGridLayout" name="gridLayout_2">
+            <item row="1" column="6">
+             <widget class="QLineEdit" name="elapsedTimeLineEdit">
+              <property name="sizePolicy">
+               <sizepolicy hsizetype="Expanding" vsizetype="Fixed">
+                <horstretch>0</horstretch>
+                <verstretch>0</verstretch>
+               </sizepolicy>
+              </property>
+              <property name="minimumSize">
+               <size>
+                <width>80</width>
+                <height>0</height>
+               </size>
+              </property>
+              <property name="toolTip">
+               <string>&lt;html&gt;&lt;head/&gt;&lt;body&gt;&lt;p&gt;Calculation time depends on many parameters, such as primer and target sequences, PCR conditions (especialy annealing temperature), amplicon size and number of mismatches. It may vary from a few seconds to tens of minutes. &lt;/p&gt;&lt;p&gt;&lt;br/&gt;&lt;/p&gt;&lt;p&gt;So be patient.&lt;/p&gt;&lt;/body&gt;&lt;/html&gt;</string>
+              </property>
+              <property name="text">
+               <string>0:00:00</string>
+              </property>
+              <property name="frame">
+               <bool>true</bool>
+              </property>
+              <property name="alignment">
+               <set>Qt::AlignRight|Qt::AlignTrailing|Qt::AlignVCenter</set>
+              </property>
+              <property name="readOnly">
+               <bool>true</bool>
+              </property>
+             </widget>
+            </item>
             <item row="1" column="1">
              <widget class="QPushButton" name="reloadButton">
               <property name="toolTip">
@@ -67,7 +101,7 @@
               </property>
              </widget>
             </item>
-            <item row="1" column="6">
+            <item row="1" column="10">
              <widget class="QPushButton" name="runButton">
               <property name="toolTip">
                <string>&lt;html&gt;&lt;head/&gt;&lt;body&gt;&lt;p&gt;Run the analysis pipeline with the current parameters. This also saves these parameters into a configuration file.&lt;/p&gt;&lt;/body&gt;&lt;/html&gt;</string>
@@ -82,21 +116,27 @@
               <property name="orientation">
                <enum>Qt::Horizontal</enum>
               </property>
+              <property name="sizeType">
+               <enum>QSizePolicy::Expanding</enum>
+              </property>
               <property name="sizeHint" stdset="0">
                <size>
-                <width>37</width>
+                <width>10000</width>
                 <height>17</height>
                </size>
               </property>
              </spacer>
             </item>
-            <item row="0" column="0" colspan="7">
+            <item row="0" column="0" colspan="11">
              <widget class="QScrollArea" name="configScrollArea">
               <property name="sizePolicy">
                <sizepolicy hsizetype="Expanding" vsizetype="Expanding">
                 <horstretch>0</horstretch>
                 <verstretch>0</verstretch>
                </sizepolicy>
+              </property>
+              <property name="toolTip">
+               <string>&lt;html&gt;&lt;head/&gt;&lt;body&gt;&lt;p&gt;Parameters which are used only in the consequent analysis are &lt;span style=&quot; font-weight:600;&quot;&gt;marked yellow.&lt;/span&gt; These will be reset as soon as you hit 'Run' and &lt;span style=&quot; font-weight:600;&quot;&gt;will not be saved&lt;/span&gt; to the configuration file.&lt;/p&gt;&lt;/body&gt;&lt;/html&gt;</string>
               </property>
               <property name="widgetResizable">
                <bool>true</bool>
@@ -114,7 +154,7 @@
               </widget>
              </widget>
             </item>
-            <item row="1" column="4">
+            <item row="1" column="8">
              <widget class="QPushButton" name="abortButton">
               <property name="toolTip">
                <string>&lt;html&gt;&lt;head/&gt;&lt;body&gt;&lt;p&gt;Abort current analysis. This operation may take a second or two.&lt;/p&gt;&lt;/body&gt;&lt;/html&gt;</string>
@@ -124,7 +164,7 @@
               </property>
              </widget>
             </item>
-            <item row="1" column="5">
+            <item row="1" column="9">
              <widget class="QPushButton" name="saveButton">
               <property name="toolTip">
                <string>&lt;html&gt;&lt;head/&gt;&lt;body&gt;&lt;p&gt;Save current configuration to a file inside the selected working directory.&lt;/p&gt;&lt;/body&gt;&lt;/html&gt;</string>
@@ -144,6 +184,13 @@
               </property>
              </widget>
             </item>
+            <item row="1" column="5">
+             <widget class="QLabel" name="elapsedTimeLabel">
+              <property name="text">
+               <string>Elapsed time:</string>
+              </property>
+             </widget>
+            </item>
            </layout>
            <zorder>runButton</zorder>
            <zorder>horizontalSpacer</zorder>
@@ -152,10 +199,12 @@
            <zorder>saveButton</zorder>
            <zorder>reloadButton</zorder>
            <zorder>resetButton</zorder>
+           <zorder>elapsedTimeLineEdit</zorder>
+           <zorder>elapsedTimeLabel</zorder>
           </widget>
           <widget class="QPlainTextEdit" name="terminalOutput">
            <property name="sizePolicy">
-            <sizepolicy hsizetype="Expanding" vsizetype="Expanding">
+            <sizepolicy hsizetype="MinimumExpanding" vsizetype="Expanding">
              <horstretch>0</horstretch>
              <verstretch>0</verstretch>
             </sizepolicy>

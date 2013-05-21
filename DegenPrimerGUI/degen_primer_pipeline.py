@@ -5,7 +5,7 @@
 # Free Software Foundation, either version 3 of the License, or
 # (at your option) any later version.
 # 
-# indicator_gddccontrol is distributed in the hope that it will be useful, but
+# degen_primer_gui is distributed in the hope that it will be useful, but
 # WITHOUT ANY WARRANTY; without even the implied warranty of
 # MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
 # See the GNU General Public License for more details.
@@ -23,15 +23,34 @@ import signal
 
 
 #pipeline object
-degen_primer_pipeline = None
+pipeline = None
 
 _pid = -1
 def sig_handler(signal, frame):
     if _pid != os.getpid(): return
-    degen_primer_pipeline.terminate()
-    sleep(1)
+    if pipeline is not None:
+        pipeline.terminate()
+        sleep(1)
     sys.exit(1)
 #end def
+
+
+class StreamEncoder(object):
+    encoding = 'UTF-8'
+    
+    def __init__(self, stream):
+        self._stream = stream
+        
+    def write(self, text):
+        encoded = unicode(text).encode(self.encoding)
+        self._stream.write(encoded)
+    
+    def flush(self):
+        self._stream.flush()
+        
+    def isatty(self):
+        return self._stream.isatty()
+#end class
 
 
 if __name__ == '__main__':
@@ -39,7 +58,13 @@ if __name__ == '__main__':
     import argparse
     from time import sleep
     from DegenPrimer.DegenPrimerConfig import DegenPrimerConfig
-    from DegenPrimer.DegenPrimerPipeline import DegenPrimerPipeline
+    from DegenPrimer.Pipeline import Pipeline
+    from DegenPrimer.AnalysisTask import AnalysisTask
+    from DegenPrimer.DBManagementTask import DBManagmentTask
+    from DegenPrimer.OptimizationTask import OptimizationTask
+    
+    sys.stderr = StreamEncoder(sys.stderr)
+    sys.stdout = StreamEncoder(sys.stdout)
     
     _error_msg = 'This executable should only be called from ' \
                  'inside the DegenPrimerGUI.'
@@ -50,8 +75,11 @@ if __name__ == '__main__':
         sys.exit(1)
     
     #initialize pipeline
-    degen_primer_pipeline = DegenPrimerPipeline()
-    
+    pipeline = Pipeline()
+    pipeline.register_task(DBManagmentTask())
+    pipeline.register_task(OptimizationTask())
+    pipeline.register_task(AnalysisTask())
+
     #set PID
     _pid = os.getpid()
 
@@ -63,23 +91,12 @@ if __name__ == '__main__':
     #command line arguments
     parser = argparse.ArgumentParser(_error_msg)
     conf_group = parser.add_argument_group('Preset configuration')
-    conf_group.add_argument('config_file', metavar='file.cfg', 
-                            type=str, nargs=1,
-                            help='Path to the analysis configuration file.')
     conf_group.add_argument('port', metavar='number', 
                             type=int, nargs=1,
                             help='Port number to connect to.')
     args = parser.parse_args()
-
-    config_file = args.config_file[0]
     port        = args.port[0]
     
-    #check configuragion file existance
-    if not os.path.isfile(config_file):
-        sys.stderr.write(('\nDegenPrimerPipeline subprocess: error, '
-                          'configuration file "%s" does not exists.\n') % config_file)
-        sys.exit(2)
-               
     #try to connect to the given port
     connection = None
     try:
@@ -87,29 +104,21 @@ if __name__ == '__main__':
     except mpc.AuthenticationError, e:
         sys.stderr.write('Cannot connect to the port %d\n' % port)
         sys.stderr.write(e.message+'\n')
-        sys.exit(3)
-    
-    #change working directory
-    config_dir = os.path.dirname(config_file) or '.'
-    os.chdir(config_dir)
+        sys.exit(2)
     
     #read in configuration
-    config = DegenPrimerConfig()
-    try:
-        config.parse_configuration(config_file)
-    except ValueError, e:
-        sys.stderr.write(e.message+'\n')
-        sys.exit(4)
+    options = connection.recv()
+    config  = DegenPrimerConfig.from_options(options)
     
-    #run the pipeline
-    exit_code = degen_primer_pipeline.run(config)
-    
-    #pass back collected reports
-    connection.send(config.reports)
+    #else, run the pipeline
+    exit_code = pipeline.run(config) 
+    if exit_code: #pass back collected reports
+        connection.send(config.reports)
+    else: connection.send(None)
     
     #close connection
     connection.close()
     
     #exit normally
-    sys.exit(0)
+    sys.exit(0 if exit_code >= 0 else 3)
 #end

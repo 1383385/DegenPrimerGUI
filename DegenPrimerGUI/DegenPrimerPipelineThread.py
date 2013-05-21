@@ -5,7 +5,7 @@
 # Free Software Foundation, either version 3 of the License, or
 # (at your option) any later version.
 # 
-# indicator_gddccontrol is distributed in the hope that it will be useful, but
+# degen_primer_gui is distributed in the hope that it will be useful, but
 # WITHOUT ANY WARRANTY; without even the implied warranty of
 # MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
 # See the GNU General Public License for more details.
@@ -23,8 +23,9 @@ import errno
 import socket
 import subprocess
 import multiprocessing.connection as mpc
-from time import sleep
-from PyQt4.QtCore import QThread, pyqtSlot, pyqtSignal
+from time import sleep, time
+from datetime import timedelta
+from PyQt4.QtCore import QThread, pyqtSlot, pyqtSignal, QString, QTimer
 from DegenPrimer.StringTools import print_exception
 import degen_primer_pipeline
 
@@ -33,17 +34,16 @@ class StreamReader(QThread):
     '''Non-blocking continuous reading from a file-like object'''
     send_line = pyqtSignal(str)
     
-    def __init__(self, _file):
+    def __init__(self, _stream):
         QThread.__init__(self)
-        self._file      = _file
+        self._stream    = _stream
         self._terminate = False
     #end def
     
     def run(self):
-        while self._file and not self._terminate:
-            msg = self._file.readline()
-            if msg: self.send_line.emit(msg)
-            #sleep(0.1)
+        while self._stream and not self._terminate:
+            msg = self._stream.readline().decode('UTF-8')
+            if msg: self.send_line.emit(QString.fromUtf8(msg))
     #end def
 
     @pyqtSlot()
@@ -57,27 +57,45 @@ class DegenPrimerPipelineThread(QThread):
     #signals for the main thread
     _lock_buttons    = pyqtSignal(bool)
     _show_results    = pyqtSignal()
+    _reload_seq_db   = pyqtSignal()
     _register_report = pyqtSignal(str, str)
+    _update_timer    = pyqtSignal(str)
     
     
     def __init__(self, args):
         QThread.__init__(self)
         self._args     = args
-        #self._pipeline = DegenPrimerPipeline()
+        self._options  = None
         self._port     = 10000
         self._pipeline_file = degen_primer_pipeline.__file__
         self._pipeline_proc = None
         self._terminate     = False
         self._readers       = []
+        #timer
+        self._timer = QTimer(self)
+        self._timer.setInterval(1000)
+        self._timer.setSingleShot(False)
+        self._time0 = time()
+        #signals
         self._lock_buttons.connect(self._args.lock_buttons)
         self._show_results.connect(self._args.show_results)
+        self._reload_seq_db.connect(self._args.reload_sequence_db)
         self._register_report.connect(self._args.register_report)
+        self._timer.timeout.connect(self._update_timer_string)
+        self._update_timer.connect(self._args.update_timer)
     #end def
     
     
     def __del__(self):
         self._stop_readers()
         self._terminate_pipeline()
+    #end def
+    
+        
+    @pyqtSlot()
+    def _update_timer_string(self):
+        time_string = str(timedelta(seconds=time()-self._time0))[:-7]
+        self._update_timer.emit(time_string)
     #end def
     
         
@@ -89,7 +107,15 @@ class DegenPrimerPipelineThread(QThread):
     def _stop_readers(self):
         for reader in self._readers: 
             reader.stop()
-            #reader.wait()
+    #end def
+    
+    
+    def _cleanup(self, e=None):
+        if e is Exception:
+            print_exception(e)
+        self._stop_readers()
+        self._timer.stop()
+        self._lock_buttons.emit(False)
     #end def
     
         
@@ -102,18 +128,23 @@ class DegenPrimerPipelineThread(QThread):
                 self._pipeline_proc.kill()
                 sleep(1)
             if self._pipeline_proc.poll() is None:
-                print 'Error: DegenPrimer Pipeline subprocess could not be properly terminated.'
+                print '\nError: DegenPrimer Pipeline subprocess could not be properly terminated.'
                 print 'You should kill it manually. PID: %d' % self._pipeline_proc.pid
             self._pipeline_proc = None
     #end def
     
     
+    def pick_options(self): self._options = self._args.options
+    
     def run(self):
         self._lock_buttons.emit(True)
+        self._time0     = time()
         self._terminate = False
         listener        = None
         connection      = None
         reports         = None
+        self._update_timer_string()
+        self._timer.start()
         #open connection to listen to the pipeline subprocess
         while not self._terminate:
             try:
@@ -125,21 +156,19 @@ class DegenPrimerPipelineThread(QThread):
                     self._port += 1
                     continue
                 print '\nException has occured while executing DegenPrimer Pipeline. Please, try again.'
-                print e.errno, e.message
-                self._lock_buttons.emit(False)
+                self._cleanup(e)
                 return
         #run pipeline subprocess
         try:
             self._pipeline_proc = subprocess.Popen((sys.executable, '-u', #unbuffered I/O
                                                     self._pipeline_file,
-                                                    self._args.config_file,
                                                     str(self._port)),
+                                                    stdin=subprocess.PIPE,
                                                     stdout=subprocess.PIPE,
                                                     stderr=subprocess.PIPE)
         except OSError, e:
             print '\nFaild to execute DegenPrimer Pipeline subprocess.'
-            print_exception(e)
-            self._lock_buttons.emit(False)
+            self._cleanup(e)
             return
         #setup stream readers
         self._readers.append(StreamReader(self._pipeline_proc.stderr))
@@ -159,16 +188,21 @@ class DegenPrimerPipelineThread(QThread):
                     print_exception(e)
                     sleep(0.1)
                     continue
-                print_exception(e)
-                self._stop_readers()
-                self._lock_buttons.emit(False)
+                self._cleanup(e)
                 return
+            except Exception, e:
+                self._cleanup(e)
+                return
+        if self._terminate:
+            self._cleanup()
+            return
+        #send pipeline options
+        connection.send(self._options)
         #wait for the process to exit
         if self._pipeline_proc.wait() != 0:
             print ('DegenPrimer Pipeline subprocess exited with '
                    'exit code %d') % self._pipeline_proc.returncode
-            self._stop_readers()
-            self._lock_buttons.emit(False)
+            self._cleanup()
             return
         else:
             #get results
@@ -176,20 +210,19 @@ class DegenPrimerPipelineThread(QThread):
             except IOError: pass
             except EOFError: pass
             except Exception, e:
-                print_exception(e)
-                self._stop_readers()
-                self._lock_buttons.emit(False)
+                self._cleanup(e)
                 return
         #if reports were generated, register them
         if reports:
             for report in reports:
                 self._register_report.emit(*report)
             self._show_results.emit()
+        elif self._pipeline_proc.returncode == 0:
+            self._reload_seq_db.emit()
         #close the listener and stop readers
         listener.close()
-        self._stop_readers()
-        self._lock_buttons.emit(False)        
-
+        self._cleanup()        
+        return
     #end def
     
     
