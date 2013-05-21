@@ -1,3 +1,19 @@
+degen-primer-gui (2.0-0ppa1) precise; urgency=low
+
+  Major Release:
+
+  * Added Field system corresponding to Option system in the main programm.
+
+  * Added Widgets module containing all custom widget classes.
+
+  * StreamEncoder is added to degen_primer_pipeline.py to sucsessfully transmit UTF messages to the GUI.
+
+  * degen_primer_pipeline.py uses Tasks system as the main programm does.
+
+  * Some changes to the UI acommodating new Option-Filed system.
+
+ -- Allis Tauri <allista@gmail.com>  Tue, 21 May 2013 16:30:59 +0400
+
 degen-primer-gui (1.4-0ppa1) precise; urgency=low
 
   * Pipeline thread architecture is changed from multiprocessing to subprocess, which allow clean analysis abortion.
