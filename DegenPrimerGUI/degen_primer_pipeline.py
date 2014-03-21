@@ -18,107 +18,41 @@ Created on Mar 4, 2013
 @author: Allis Tauri <allista@gmail.com>
 '''
 
-import sys, os
-import signal
+import sys
+import SubprocessBase
+from DegenPrimer.DegenPrimerConfig import DegenPrimerConfig
+from DegenPrimer.Pipeline import Pipeline
+from DegenPrimer.AnalysisTask import AnalysisTask
+from DegenPrimer.DBManagementTask import DBManagmentTask
+from DegenPrimer.OptimizationTask import OptimizationTask
 
 
-#pipeline object
-pipeline = None
-
-_pid = -1
-def sig_handler(signal, frame):
-    if _pid != os.getpid(): return
-    if pipeline is not None:
-        pipeline.terminate()
-        sleep(1)
-    sys.exit(1)
-#end def
-
-
-class StreamEncoder(object):
-    encoding = 'UTF-8'
+class DegenPrimerSubprocess(SubprocessBase.SubprocessBase):
+    '''Subprocess for DegenPrimer'''
+    def __init__(self):
+        super(DegenPrimerSubprocess, self).__init__()
+        self._pipeline = None
+    #end def
     
-    def __init__(self, stream):
-        self._stream = stream
-        
-    def write(self, text):
-        encoded = unicode(text).encode(self.encoding)
-        self._stream.write(encoded)
+    def _initialize(self):
+        self._pipeline = Pipeline(self._abort_event)
+        self._pipeline.register_task(DBManagmentTask(self._abort_event))
+        self._pipeline.register_task(OptimizationTask(self._abort_event))
+        self._pipeline.register_task(AnalysisTask(self._abort_event))
+        return True
+    #end def
     
-    def flush(self):
-        self._stream.flush()
-        
-    def isatty(self):
-        return self._stream.isatty()
+    def _do_work(self, options):
+        #read in configuration
+        config = DegenPrimerConfig.from_options(options)
+        #else, run the pipeline
+        exit_code = self._pipeline.run(config) 
+        if exit_code: #pass back collected reports
+            self._con.send(config.reports)
+        return 0
+    #end def
 #end class
 
 
 if __name__ == '__main__':
-    import multiprocessing.connection as mpc
-    import argparse
-    from time import sleep
-    from DegenPrimer.DegenPrimerConfig import DegenPrimerConfig
-    from DegenPrimer.Pipeline import Pipeline
-    from DegenPrimer.AnalysisTask import AnalysisTask
-    from DegenPrimer.DBManagementTask import DBManagmentTask
-    from DegenPrimer.OptimizationTask import OptimizationTask
-    
-    sys.stderr = StreamEncoder(sys.stderr)
-    sys.stdout = StreamEncoder(sys.stdout)
-    
-    _error_msg = 'This executable should only be called from ' \
-                 'inside the DegenPrimerGUI.'
-                 
-    #check if it is run from a tty
-    if sys.stdin.isatty():
-        sys.stderr.write(_error_msg+'\n')
-        sys.exit(1)
-    
-    #initialize pipeline
-    pipeline = Pipeline()
-    pipeline.register_task(DBManagmentTask())
-    pipeline.register_task(OptimizationTask())
-    pipeline.register_task(AnalysisTask())
-
-    #set PID
-    _pid = os.getpid()
-
-    #setup signal handler
-    signal.signal(signal.SIGINT,  sig_handler)
-    signal.signal(signal.SIGTERM, sig_handler)
-    signal.signal(signal.SIGQUIT, sig_handler)
-
-    #command line arguments
-    parser = argparse.ArgumentParser(_error_msg)
-    conf_group = parser.add_argument_group('Preset configuration')
-    conf_group.add_argument('port', metavar='number', 
-                            type=int, nargs=1,
-                            help='Port number to connect to.')
-    args = parser.parse_args()
-    port        = args.port[0]
-    
-    #try to connect to the given port
-    connection = None
-    try:
-        connection = mpc.Client(('localhost', port), authkey="degen_primer_auth")
-    except mpc.AuthenticationError, e:
-        sys.stderr.write('Cannot connect to the port %d\n' % port)
-        sys.stderr.write(e.message+'\n')
-        sys.exit(2)
-    
-    #read in configuration
-    options = connection.recv()
-    config  = DegenPrimerConfig.from_options(options)
-    
-    #else, run the pipeline
-    exit_code = pipeline.run(config) 
-    if exit_code: #pass back collected reports
-        connection.send(config.reports)
-    else: connection.send(None)
-    
-    #close connection
-    connection.close()
-    
-    #exit normally
-    sys.exit(0 if exit_code >= 0 else 3)
-#end
+    sys.exit(DegenPrimerSubprocess().main())

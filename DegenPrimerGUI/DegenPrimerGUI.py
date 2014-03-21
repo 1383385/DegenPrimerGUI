@@ -20,31 +20,35 @@ Created on Jul 27, 2012
 
 
 import os
+import abc
 from PyQt4 import uic
 from PyQt4.QtCore import QString, pyqtSlot, pyqtSignal, \
-QSettings
+QSettings, pyqtWrapperType
 from PyQt4.QtGui import QApplication, QMainWindow, QGroupBox, \
 QFileDialog, QPlainTextEdit, QFont, QMessageBox, QTextCursor, \
-QLabel, QGridLayout, QSizePolicy
+QLabel, QGridLayout, QSizePolicy, QTextCursor
 from DegenPrimer.DegenPrimerConfig import DegenPrimerConfig
 from DegenPrimer.Option import Option, OptionGroup
 from DegenPrimer.StringTools import print_exception
-from DegenPrimer.Primer import load_sequence
 from DegenPrimer.AnalysisTask import AnalysisTask
 from DegenPrimer.DBManagementTask import DBManagmentTask
 from DegenPrimer.OptimizationTask import OptimizationTask
-from DegenPrimerPipelineThread import DegenPrimerPipelineThread
 from Widgets import SequenceTableWidget
+from SubprocessThread import SubprocessThread
 from Field import Field
-import DegenPrimerUI_rc #qt resources for the UI
+import degen_primer_pipeline
 
+try: import DegenPrimerUI_rc #qt resources for the UI
+except: pass
 
+class pyqtABCMeta(pyqtWrapperType, abc.ABCMeta): pass
 
 class DegenPrimerGUI(DegenPrimerConfig, QMainWindow):
     '''Graphical User Interface for degen_primer'''
+    __metaclass__ = pyqtABCMeta
 
     _ui_path = ('./', '/usr/local/share/degen_primer_gui/', '/usr/share/degen_primer_gui/')
-    _ui_file      = 'DegenPrimerUI.ui'
+    _ui_file = 'DegenPrimerUI.ui'
     
     _config_option = Option(name='config',
                             desc='Path to a configuration file containing some '
@@ -101,12 +105,22 @@ class DegenPrimerGUI(DegenPrimerConfig, QMainWindow):
         self._fields = dict()
         #config and cwdir path choosers
         self._build_group_gui(self._config_group)
+        #job-id label
+        self._job_id_label = QLabel(self)
+        self.configForm.addWidget(self._job_id_label)
         #all other options
         self._seq_db_box = None
         for group in self._option_groups: self._build_group_gui(group)
         #setup default values
         self._reset_fields()
         #setup buttons
+        self._run_widgets  = (self.abortButton, 
+                              self.elapsedTimeLineEdit,
+                              self.elapsedTimeLabel,)
+        self._idle_widgets = (self.saveButton,
+                              self.runButton,
+                              self.resetButton,
+                              self.reloadButton,)
         self.reloadButton.clicked.connect(self.reload_config)
         self.resetButton.clicked.connect(self._reset_fields)
         self.saveButton.clicked.connect(self._save_config)
@@ -117,7 +131,14 @@ class DegenPrimerGUI(DegenPrimerConfig, QMainWindow):
         self._append_terminal_output.connect(self.terminalOutput.insertPlainText)
         self.terminalOutput.textChanged.connect(self.terminalOutput.ensureCursorVisible)
         #pipeline thread
-        self._pipeline_thread = DegenPrimerPipelineThread(self)
+        self._pipeline_thread = SubprocessThread(degen_primer_pipeline)
+        self._pipeline_thread.started.connect(self.lock_buttons)
+        self._pipeline_thread.results_received.connect(self.register_reports)
+        self._pipeline_thread.finished.connect(self.show_results)
+        self._pipeline_thread.finished.connect(self.reload_sequence_db)
+        self._pipeline_thread.finished.connect(self.unlock_buttons)
+        self._pipeline_thread.update_timer.connect(self.update_timer)
+        self._pipeline_thread.message_received.connect(self.write)
         self._pipeline_thread_stop.connect(self._pipeline_thread.stop)
         #restore GUI state
         self._restore_mainwindow_state()
@@ -147,13 +168,10 @@ class DegenPrimerGUI(DegenPrimerConfig, QMainWindow):
     
     def _customize_field(self, option, field, label):
         #set style-sheets and fonts
-        if not option.save:
-            field.setStyleSheet('* { background: hsv(60, 50, 255) }')
         if option.name == 'sequence':
             font = QFont()
             font.setFamily('Monospace')
             field.setFont(font)
-            
         #connect signals to slots
         elif option.name == 'sequence_db':
             field.textChanged.connect(self._list_seq_db)
@@ -275,6 +293,8 @@ class DegenPrimerGUI(DegenPrimerConfig, QMainWindow):
             os.chdir(self._cwdir)
         self._config_file = config_file
         self._parse_and_check()
+        self._job_id_label.setText(('<p align=center><b>Analysis ID:</b> '
+                                    '%s</p>') % self.job_id) 
     #end def
     
     
@@ -344,7 +364,7 @@ class DegenPrimerGUI(DegenPrimerConfig, QMainWindow):
         if DBManagmentTask.check_options(self) \
         or OptimizationTask.check_options(self) \
         or AnalysisTask.check_options(self):
-            self._pipeline_thread.pick_options()
+            self._pipeline_thread.set_data(self.options)
             if self._config_file:
                 self._change_cwdir()
                 self.save_configuration(silent=True)
@@ -353,6 +373,8 @@ class DegenPrimerGUI(DegenPrimerConfig, QMainWindow):
                 self.terminalOutput.clear()
                 self.reset_temporary_options()
                 self._update_fields()
+            self.abortButton.setEnabled(True)
+            self.abortButton.setText('Abort')
             self._pipeline_thread.start()
     #end def
     
@@ -366,7 +388,7 @@ class DegenPrimerGUI(DegenPrimerConfig, QMainWindow):
     def _clear_results(self):
         while self.mainTabs.count() > 1:
             self.mainTabs.removeTab(1)
-        self._reports = list()
+        self._reports = []
     #end def
     
     
@@ -380,32 +402,29 @@ class DegenPrimerGUI(DegenPrimerConfig, QMainWindow):
     
     
     def _show_run_specific_widgets(self, show=True):
-        widgets = [self.abortButton, 
-                   self.elapsedTimeLineEdit,
-                   self.elapsedTimeLabel,]
-        for widget in widgets:
+        for widget in self._run_widgets:
             if show: widget.show()
             else: widget.hide()
     #end def
-    
     
     #for pipeline thread to call
     #lock analyze and reset buttons while analysis is running
     @pyqtSlot(bool)
     def lock_buttons(self, lock=True):
-        self.saveButton.setEnabled(not lock)
-        self.runButton.setEnabled(not lock)
-        self.resetButton.setEnabled(not lock)
-        self.reloadButton.setEnabled(not lock)
+        for widget in self._idle_widgets:
+            widget.setEnabled(not lock)
         self._show_run_specific_widgets(lock)
     #end def
+    @pyqtSlot()
+    def unlock_buttons(self): self.lock_buttons(False)
     
     
     #show result tabs
     @pyqtSlot()
     def show_results(self):
+        if not self._reports: return
         #display reports
-        for report in self._reports:
+        for report_name, report_file in self._reports:
             #load report
             report_widget = QPlainTextEdit()
             font = QFont()
@@ -413,23 +432,24 @@ class DegenPrimerGUI(DegenPrimerConfig, QMainWindow):
             report_widget.setFont(font)
             report_widget.setReadOnly(True)
             try:
-                report_file = open(report[1], 'r')
+                report_file = open(report_file, 'r')
                 report_text = report_file.read()
                 report_file.close()
             except Exception, e:
-                print 'Unable to load report file:', report[1]
+                print 'Unable to load report file:', report_file
                 print_exception(e)
                 continue
             report_widget.insertPlainText(QString.fromUtf8(report_text))
             report_widget.moveCursor(QTextCursor.Start, QTextCursor.MoveAnchor)
-            self.mainTabs.addTab(report_widget, report[0])
+            self.mainTabs.addTab(report_widget, report_name)
         #alert main window
         QApplication.alert(self)
     #end def
     
     
     @pyqtSlot()
-    def reload_sequence_db(self):
+    def reload_sequence_db(self, need_reload=True):
+        if not need_reload: return
         self._list_seq_db(None)
         self._list_seq_db(self.sequence_db)
     #end def
@@ -437,7 +457,9 @@ class DegenPrimerGUI(DegenPrimerConfig, QMainWindow):
         
     #stdout/err catcher
     def write(self, text):
+        self.terminalOutput.moveCursor(QTextCursor.End)
         self._append_terminal_output.emit(QString.fromUtf8(text))
+    #end def
         
     def flush(self): pass
         
@@ -447,7 +469,9 @@ class DegenPrimerGUI(DegenPrimerConfig, QMainWindow):
     def _abort_analysis(self):
         if self._pipeline_thread.isRunning():
             self._pipeline_thread_stop.emit()
-    
+            self.abortButton.setEnabled(False)
+            self.abortButton.setText('Aborting...')
+    #end def
     
     #close handler
     def closeEvent(self, event):

@@ -38,7 +38,7 @@ child = subprocess.Popen(pyrcc4_cli,
                          stderr=subprocess.PIPE,
                          shell=(sys.platform!="win32"))
 rcc_content = child.stdout.read()
-#filter out timestamp or dpkg-source complains that the source had changed
+#filter out timestamp. Otherwise dpkg-source complains that the source had changed
 rcc_filtered = ''
 for line in rcc_content.split('\n'):
     if line[:10] == '# Created:':

@@ -23,7 +23,6 @@ from PyQt4.QtCore import QString, QSettings
 from PyQt4.QtGui import QWidget, QGroupBox, QFrame, \
 QLineEdit, QDoubleSpinBox, QSpinBox, QCheckBox, QFileDialog, QPushButton, \
 QLabel, QGridLayout, QSizePolicy
-from DegenPrimer.StringTools import wrap_text
 from Widgets import PolyLineEdit, FileDialog
 
 
@@ -203,6 +202,8 @@ class Field(object):
                 field.textChanged.connect(file_dialog.setDirectory)
         if field:
             field.setToolTip(option.formatted_desc)
+            if not option.save:
+                field.setStyleSheet('* { background: hsv(60, 50, 255) }')
             if hasattr(cls.customize_field, '__call__'):
                 cls.customize_field(option, field, label)
             if type(label) is str: 

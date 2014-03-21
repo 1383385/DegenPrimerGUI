@@ -157,7 +157,7 @@
             <item row="1" column="8">
              <widget class="QPushButton" name="abortButton">
               <property name="toolTip">
-               <string>&lt;html&gt;&lt;head/&gt;&lt;body&gt;&lt;p&gt;Abort current analysis. This operation may take a second or two.&lt;/p&gt;&lt;/body&gt;&lt;/html&gt;</string>
+               <string>&lt;html&gt;&lt;head/&gt;&lt;body&gt;&lt;p&gt;Abort current analysis. This may take some time as not all operations could be stopped immediately.&lt;/p&gt;&lt;/body&gt;&lt;/html&gt;</string>
               </property>
               <property name="text">
                <string>Abort</string>
@@ -215,7 +215,7 @@
             </font>
            </property>
            <property name="toolTip">
-            <string>&lt;html&gt;&lt;head/&gt;&lt;body&gt;&lt;p&gt;Terminal output&lt;/p&gt;&lt;/body&gt;&lt;/html&gt;</string>
+            <string>&lt;html&gt;&lt;head/&gt;&lt;body&gt;&lt;p&gt;Analysis log&lt;/p&gt;&lt;/body&gt;&lt;/html&gt;</string>
            </property>
            <property name="readOnly">
             <bool>true</bool>
