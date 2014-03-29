@@ -1,3 +1,13 @@
+degen-primer-gui (2.1-0ppa1) precise; urgency=low
+
+  * New robust termination system.
+
+  * New subprocess system to run the analysis.
+
+  * Bug fixes.
+
+ -- Allis Tauri <allista@gmail.com>  Sat, 29 Mar 2014 23:09:19 +0400
+
 degen-primer-gui (2.0-0ppa1) precise; urgency=low
 
   Major Release:
