@@ -46,8 +46,7 @@ class DegenPrimerSubprocess(SubprocessBase.SubprocessBase):
         #read in configuration
         config = DegenPrimerConfig.from_options(options)
         #else, run the pipeline
-        exit_code = self._pipeline.run(config) 
-        if exit_code: #pass back collected reports
+        if self._pipeline.run(config) == 0: #pass back collected reports
             self._con.send(config.reports)
         return 0
     #end def
