@@ -18,12 +18,14 @@ Created on Mar 23, 2013
 @author: Allis Tauri <allista@gmail.com>
 '''
 
+from __future__ import print_function
+
 from PyQt4.QtCore import Qt, QString, QSettings, pyqtSlot, pyqtSignal
 from PyQt4.QtGui import QLineEdit, QTableWidget, QTableWidgetItem,  \
 QAbstractItemView, QFileDialog
 
-from DegenPrimer.SeqDB import SeqDB
-
+from .SubprocessThread import SubprocessThread
+from . import seq_loader
 
 class PolyLineEdit(QLineEdit):
     '''Wrapper for QLineEdit which overloads setText 
@@ -86,55 +88,64 @@ class SequenceTableWidget(QTableWidget):
     selected sequences'''
     
     send_ids = pyqtSignal(list)
+    abort_loading = pyqtSignal()
+    loaded = pyqtSignal()
     
-    def __init__(self, parent):
+    def __init__(self, parent=None):
         QTableWidget.__init__(self, parent)
+        self.hide()
         self.setColumnCount(2)
-        self.verticalHeader().hide()
         self.setSelectionBehavior(QAbstractItemView.SelectRows)
         self.setSelectionMode(QAbstractItemView.MultiSelection)
-        self.setSortingEnabled(True)
+#        self.setSortingEnabled(True)
         self.cellClicked.connect(self._get_ids)
-        self._seq_db = SeqDB()
-    #end def
+        self._loader = None
     
     def __del__(self):
-        self._seq_db.close()
-    #end def
-    
-    
+        if self._loader is not None:
+            self._loader.stop()
+        
     def clear(self):
         QTableWidget.clear(self)
         self.setRowCount(0)
-        self.setHorizontalHeaderLabels(['ID', 'sequence name'])
-    #end def
+        self.setHorizontalHeaderLabels(['ID', 'description'])
     
+    @staticmethod
+    def _readonly(_it):
+        _it.setFlags(_it.flags() ^ Qt.ItemIsEditable)
+        return _it
     
-    @pyqtSlot('QString')
-    def list_db(self, db_filename):
-        self.clear()
-        db_filename = unicode(db_filename)
-        if not self._seq_db.connect(db_filename): return False
-        seq_names = self._seq_db.get_names()
-        self._seq_db.close()
-        if not seq_names: return False
-        for _id, name in seq_names.items():
-            self.insertRow(0)
-            self.setItem(0, 0, QTableWidgetItem(str(_id)))
-            self.setItem(0, 1, QTableWidgetItem(str(name)))
-        self.setMinimumHeight(self.rowHeight(0)*min(11, len(seq_names)))
-        self.sortByColumn(1, Qt.AscendingOrder)
+    @pyqtSlot(list)
+    def _add_row(self, (sid, description)):
+        self.insertRow(0)
+        self.setItem(0, 0, self._readonly(QTableWidgetItem(sid)))
+        self.setItem(0, 1, self._readonly(QTableWidgetItem(description)))
+        
+    @pyqtSlot(bool)
+    def _db_loaded(self, _success):
+        self.setMinimumHeight(self.rowHeight(0)*min(11, self.rowCount()))
         self.resizeColumnsToContents()
-        return True
-    #end def
-    
+        self.loaded.emit()
+        self._loader = None
+        self.show()
+        
+    def load_db(self, filenames):
+        self.clear()
+        self._loader = SubprocessThread(seq_loader)
+        self._loader.results_received.connect(self._add_row)
+        self._loader.finished.connect(self._db_loaded)
+        self._loader.message_received.connect(print)
+        self.abort_loading.connect(self._loader.stop)
+        self._loader.set_data(filenames)
+        self._loader.start()
+        
+    @property
+    def loading(self): return self._loader is not None
     
     @pyqtSlot('int', 'int')
     def _get_ids(self, row, col):
         ids = self.get_ids()
         if ids: self.send_ids.emit(ids)
-    #end def
-    
     
     @pyqtSlot()
     def get_ids(self):
@@ -144,20 +155,17 @@ class SequenceTableWidget(QTableWidget):
             if item.column() != 0: continue
             ids.append(unicode(item.text()))
         return ids
-    #end def
-    
     
     @pyqtSlot('QString')
     def set_ids(self, ids):
         self.clearSelection()
         ids = unicode(ids).split(', ')
-        if ids:
-            for _id in ids:
-                if not _id: continue
-                items = self.findItems(_id.rstrip(', '), Qt.MatchExactly)
+        if not ids: return
+        for sid in ids:
+            if not sid: continue
+            items = self.findItems(sid.rstrip(', '), Qt.MatchExactly)
+            for item in items:
                 selected = self.selectedItems()
-                for item in items:
-                    if item not in selected:
-                        self.selectRow(item.row())
-    #end def
+                if item not in selected:
+                    self.selectRow(item.row())
 #end class

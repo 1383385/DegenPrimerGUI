@@ -26,6 +26,7 @@ import sys
 import errno
 import socket
 import subprocess
+import binascii
 import multiprocessing.connection as mpc
 from time import sleep, time
 from datetime import timedelta
@@ -69,7 +70,7 @@ class SubprocessThread(QThread):
     started          = pyqtSignal()
     finished         = pyqtSignal(bool)
     update_timer     = pyqtSignal(str)
-    results_received = pyqtSignal(list)
+    results_received = pyqtSignal(object)
     message_received = pyqtSignal(str)
     
     
@@ -94,13 +95,11 @@ class SubprocessThread(QThread):
         
     def __del__(self): self._cleanup()
     
-    
     @pyqtSlot()
     def _update_timer_string(self):
         time_string = str(timedelta(seconds=time()-self._time0))[:-7]
         self.update_timer.emit(time_string)
     #end def
-    
     
     @pyqtSlot(str)
     def _on_error(self, msg): self.stop()
@@ -137,9 +136,8 @@ class SubprocessThread(QThread):
         self.finished.emit(e is None)
     #end def
     
-    
     def _setup_listener(self):
-        self._auth = os.urandom(32)
+        self._auth = binascii.b2a_hex(os.urandom(32))
         while not self._abort:
             try:
                 self._listener = mpc.Listener(('localhost', self._port), 
@@ -175,14 +173,14 @@ class SubprocessThread(QThread):
     #end def
     
     def _run_subprocess(self):
-        env = dict(auth=self._auth); env.update(os.environ)
-        try: self._subprocess = subprocess.Popen((sys.executable, '-u', #unbuffered I/O
-                                                  self._executable,
-                                                  str(self._port)),
-                                                 env=env,
-                                                 stdin=subprocess.PIPE,
-                                                 stdout=subprocess.PIPE,
-                                                 stderr=subprocess.PIPE)
+        try: 
+            self._subprocess = subprocess.Popen((sys.executable, '-u', #unbuffered I/O
+                                                 self._executable,
+                                                 str(self._port)),
+                                                stdin=subprocess.PIPE,
+                                                stdout=subprocess.PIPE,
+                                                stderr=subprocess.PIPE)
+            self._subprocess.stdin.write(self._auth+'\n')
         except Exception, e:
             print '\nFaild to execute %s.' % self._executable
             self._cleanup(e)
@@ -206,7 +204,6 @@ class SubprocessThread(QThread):
         self._cleanup()
         return False
     #end def
-    
     
     def set_data(self, data): self._data = data
     

@@ -26,10 +26,10 @@ import sys
 import abc
 import signal
 import argparse
-import traceback as tb
+import traceback
 import multiprocessing.connection as mpc
-import DegenPrimer.tmpStorage as tmpStorage
-from DegenPrimer.UMP import ignore_interrupt
+import BioUtils.Tools.tmpStorage as tmpStorage
+from BioUtils.Tools.UMP import ignore_interrupt
 from multiprocessing.managers import SyncManager
 from threading import Thread
 from time import sleep
@@ -53,7 +53,7 @@ class SignalListener(Thread):
     def run(self):
         try: self._handle_signal() 
         except (KeyboardInterrupt, EOFError, IOError): pass
-        except Exception: tb.print_exc()
+        except Exception: traceback.print_exc()
     #end def
 #end class
 
@@ -94,6 +94,7 @@ class SubprocessBase(object):
         #connection information
         self._port = None
         self._con  = None
+        self()
     #end def
     
     def __del__(self):
@@ -136,7 +137,7 @@ class SubprocessBase(object):
     #end def
     
     def _get_auth_key(self):
-        try: self._auth = os.environ['auth']
+        try: self._auth = sys.stdin.readline().strip('\n')
         except: self._auth = None
     #end def
     
@@ -148,7 +149,7 @@ class SubprocessBase(object):
             self._err.write('Cannot connect to the port %d\n%s\n' % (self._port,str(e)))
             return False
         except: 
-            tb.print_exc()
+            traceback.print_exc()
             return False
         return True
     #end def
@@ -172,7 +173,7 @@ class SubprocessBase(object):
     def _do_work(self, data): pass
 
     
-    def main(self):
+    def _main(self):
         #check if run from a tty
         if self._check_tty(): return 1 
         #set std streams
@@ -203,4 +204,16 @@ class SubprocessBase(object):
         self._disconnect()
         return 0 if result == 0 else 3+result
     #end def
+    
+    def __call__(self, sys_exit=True, *args, **kwargs):
+        try: ret = self._main()
+        except SystemExit, e:
+            if sys_exit: sys.exit(e.code)
+            else: return e.code
+        except:
+            traceback.print_exc()
+            if sys_exit: sys.exit(1)
+            else: return 1
+        if sys_exit: sys.exit(ret or 0)
+        else: return 0
 #end class

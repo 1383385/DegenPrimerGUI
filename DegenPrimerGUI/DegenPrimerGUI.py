@@ -25,17 +25,17 @@ from PyQt4 import uic
 from PyQt4.QtCore import QString, pyqtSlot, pyqtSignal, \
 QSettings, pyqtWrapperType
 from PyQt4.QtGui import QApplication, QMainWindow, QGroupBox, \
-QFileDialog, QPlainTextEdit, QFont, QMessageBox, QTextCursor, \
-QLabel, QGridLayout, QSizePolicy, QTextCursor
+QFileDialog, QPlainTextEdit, QFont, QMessageBox, \
+QLabel, QGridLayout, QSizePolicy, QTextCursor, QPushButton
+
 from DegenPrimer.DegenPrimerConfig import DegenPrimerConfig
 from DegenPrimer.Option import Option, OptionGroup
-from DegenPrimer.StringTools import print_exception
 from DegenPrimer.AnalysisTask import AnalysisTask
-from DegenPrimer.DBManagementTask import DBManagmentTask
 from DegenPrimer.OptimizationTask import OptimizationTask
-from Widgets import SequenceTableWidget
-from SubprocessThread import SubprocessThread
-from Field import Field
+
+from .Widgets import SequenceTableWidget
+from .SubprocessThread import SubprocessThread
+from .Field import Field
 import degen_primer_pipeline
 
 try: import DegenPrimerUI_rc #qt resources for the UI
@@ -72,8 +72,7 @@ class DegenPrimerGUI(DegenPrimerConfig, QMainWindow):
                                 options=(_config_option,
                                          _cwdir_option,
                                          ))
-
-    _skip_options     = ['list_db']
+    _skip_options     = []
 
     #stdout/err catcher signal
     _append_terminal_output = pyqtSignal(str)
@@ -108,8 +107,11 @@ class DegenPrimerGUI(DegenPrimerConfig, QMainWindow):
         #job-id label
         self._job_id_label = QLabel(self)
         self.configForm.addWidget(self._job_id_label)
-        #all other options
+        #sequence db view
+        self._seq_db_widget = None
+        self._seq_db_label = None
         self._seq_db_box = None
+        self._seq_db_button = None
         for group in self._option_groups: self._build_group_gui(group)
         #setup default values
         self._reset_fields()
@@ -135,7 +137,6 @@ class DegenPrimerGUI(DegenPrimerConfig, QMainWindow):
         self._pipeline_thread.started.connect(self.lock_buttons)
         self._pipeline_thread.results_received.connect(self.register_reports)
         self._pipeline_thread.finished.connect(self.show_results)
-        self._pipeline_thread.finished.connect(self.reload_sequence_db)
         self._pipeline_thread.finished.connect(self.unlock_buttons)
         self._pipeline_thread.update_timer.connect(self.update_timer)
         self._pipeline_thread.message_received.connect(self.write)
@@ -173,8 +174,6 @@ class DegenPrimerGUI(DegenPrimerConfig, QMainWindow):
             font.setFamily('Monospace')
             field.setFont(font)
         #connect signals to slots
-        elif option.name == 'sequence_db':
-            field.textChanged.connect(self._list_seq_db)
         elif option.name == 'config':
             field.textChanged.connect(self._load_config)
         elif option.name == 'working_directory':
@@ -182,44 +181,56 @@ class DegenPrimerGUI(DegenPrimerConfig, QMainWindow):
             field.editingFinished.connect(self._check_cwdir_field)
     #end def
     
+    def _del_seq_db(self):
+        if self._seq_db_widget is not None:
+            if self._seq_db_widget.loading:
+                self._seq_db_widget.abort_loading.emit()
+            self._seq_db_widget.deleteLater()
+        self._seq_db_widget = None
+        if self._seq_db_label is not None:
+            self._seq_db_label.deleteLater()
+        self._seq_db_label = None
+        self._seq_db_button.setText('Show Sequence Selector')
+        
+    @pyqtSlot()
+    def _seq_db_loaded(self):
+        self._seq_db_widget.set_ids(', '.join(self._fields['use_sequences'].field.text()))
+        self._seq_db_button.setText('Hide Sequence Selector')
     
-    @pyqtSlot('QString')
-    def _list_seq_db(self, db_filename):
-        db_filename     = unicode(db_filename)
-        use_ids_field   = self._fields['use_sequences'].field
+    def _load_seq_db(self, filenames):
+        if not filenames: return
+        self._seq_db_widget = SequenceTableWidget(self.centralWidget())
+        self._seq_db_widget.loaded.connect(self._seq_db_loaded)
+        self._seq_db_widget.load_db(filenames)
         db_group_layout = self._seq_db_box.layout()
-        if db_filename and os.path.isfile(db_filename):
-            label = QLabel('Sequences in database', self.centralWidget())
-            label.setSizePolicy(QSizePolicy.Maximum, QSizePolicy.Maximum)
-            db_table_widget = SequenceTableWidget(self.centralWidget())
-            if db_table_widget.list_db(db_filename):
-                db_group_layout.addWidget(label, 0, 0)
-                db_group_layout.addWidget(db_table_widget, 0, 1)
-                db_table_widget.send_ids.connect(use_ids_field.setText)
-                use_ids_field.textChanged.connect(db_table_widget.set_ids)
-                db_table_widget.set_ids(', '.join(use_ids_field.text()))
-                db_table_widget.show()
-            else:
-                del db_table_widget
-                db_group_layout.addWidget(label, 0, 0)
-                db_group_layout.addWidget(QLabel('no sequences found', self.centralWidget()), 0, 1)
-        else:
-            db_table_widget = self.centralWidget().findChild(SequenceTableWidget)
-            if db_table_widget is None: return
-            db_table_label  = db_group_layout.itemAtPosition(0,0).widget()
-            if db_table_label is not None: db_table_label.deleteLater()
-            db_table_widget.deleteLater()
+        use_ids_field   = self._fields['use_sequences'].field
+        self._seq_db_label = QLabel('Sequences in database', self.centralWidget())
+        self._seq_db_label.setSizePolicy(QSizePolicy.Maximum, QSizePolicy.Maximum)
+        row = db_group_layout.rowCount()
+        db_group_layout.addWidget(self._seq_db_label, row, 0)
+        db_group_layout.addWidget(self._seq_db_widget, row, 1)
+        self._seq_db_widget.send_ids.connect(use_ids_field.setText)
+        use_ids_field.textChanged.connect(self._seq_db_widget.set_ids)        
+
+    def _setup_seq_db_view(self, grp_box):
+        self._seq_db_box = grp_box
+        self._seq_db_button = QPushButton('Show Sequence Selector', self.centralWidget())
+        self._seq_db_button.clicked.connect(self._toggle_seq_db_view)
+        layout = self._seq_db_box.layout() 
+        layout.addWidget(self._seq_db_button, layout.rowCount(), 1)
     #end def
-    
+
     
     def _build_group_gui(self, group):
         grp_box    = QGroupBox(group.desc, self.configFormWidget)
         grp_box.setLayout(QGridLayout())
-        if group.name == 'seq_db': self._seq_db_box = grp_box
         for opt in group.options:
             if opt.name in self._skip_options: continue
             self._fields[opt.name] = Field(opt, grp_box)
         self.configForm.addWidget(grp_box)
+        #customization
+        if group.name == 'iPCR': 
+            self._setup_seq_db_view(grp_box)
     #end def
             
     
@@ -361,8 +372,7 @@ class DegenPrimerGUI(DegenPrimerConfig, QMainWindow):
     def _analyse(self):
         #try to parse configuration and check it
         if not self._parse(): return
-        if DBManagmentTask.check_options(self) \
-        or OptimizationTask.check_options(self) \
+        if OptimizationTask.check_options(self) \
         or AnalysisTask.check_options(self):
             self._pipeline_thread.set_data(self.options)
             if self._config_file:
@@ -389,6 +399,7 @@ class DegenPrimerGUI(DegenPrimerConfig, QMainWindow):
         while self.mainTabs.count() > 1:
             self.mainTabs.removeTab(1)
         self._reports = []
+        self._del_seq_db()
     #end def
     
     
@@ -437,7 +448,7 @@ class DegenPrimerGUI(DegenPrimerConfig, QMainWindow):
                 report_file.close()
             except Exception, e:
                 print 'Unable to load report file:', report_file
-                print_exception(e)
+                print e
                 continue
             report_widget.insertPlainText(QString.fromUtf8(report_text))
             report_widget.moveCursor(QTextCursor.Start, QTextCursor.MoveAnchor)
@@ -448,12 +459,11 @@ class DegenPrimerGUI(DegenPrimerConfig, QMainWindow):
     
     
     @pyqtSlot()
-    def reload_sequence_db(self, need_reload=True):
-        if not need_reload: return
-        self._list_seq_db(None)
-        self._list_seq_db(self.sequence_db)
-    #end def
-        
+    def _toggle_seq_db_view(self):
+        if self._seq_db_widget is None:
+            self._seq_db_button.setText('Loading sequences, please wait...')
+            self._load_seq_db(self.template_files)
+        else: self._del_seq_db()
         
     #stdout/err catcher
     def write(self, text):

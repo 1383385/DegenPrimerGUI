@@ -18,12 +18,10 @@ Created on Mar 4, 2013
 @author: Allis Tauri <allista@gmail.com>
 '''
 
-import sys
 import SubprocessBase
 from DegenPrimer.DegenPrimerConfig import DegenPrimerConfig
 from DegenPrimer.Pipeline import Pipeline
 from DegenPrimer.AnalysisTask import AnalysisTask
-from DegenPrimer.DBManagementTask import DBManagmentTask
 from DegenPrimer.OptimizationTask import OptimizationTask
 
 
@@ -36,7 +34,6 @@ class DegenPrimerSubprocess(SubprocessBase.SubprocessBase):
     
     def _initialize(self):
         self._pipeline = Pipeline(self._abort_event)
-        self._pipeline.register_task(DBManagmentTask(self._abort_event))
         self._pipeline.register_task(OptimizationTask(self._abort_event))
         self._pipeline.register_task(AnalysisTask(self._abort_event))
         return True
@@ -54,4 +51,4 @@ class DegenPrimerSubprocess(SubprocessBase.SubprocessBase):
 
 
 if __name__ == '__main__':
-    sys.exit(DegenPrimerSubprocess().main())
+    DegenPrimerSubprocess()
