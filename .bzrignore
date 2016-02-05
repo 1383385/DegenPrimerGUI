@@ -1,8 +1,0 @@
-*.txt
-*.cfg
-*.fasta
-*.ipcr
-build
-MANIFEST
-dist
-./DegenPrimerGUI/DegenPrimerUI_rc.py
