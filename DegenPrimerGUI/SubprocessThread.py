@@ -2,12 +2,12 @@
 #
 # Copyright (C) 2013 Allis Tauri <allista@gmail.com>
 # 
-# ADC Recorder is free software: you can redistribute it and/or modify it
+# DegenPrimerGUI is free software: you can redistribute it and/or modify it
 # under the terms of the GNU General Public License as published by the
 # Free Software Foundation, either version 3 of the License, or
 # (at your option) any later version.
 # 
-# ADC Recorder is distributed in the hope that it will be useful, but
+# DegenPrimerGUI is distributed in the hope that it will be useful, but
 # WITHOUT ANY WARRANTY; without even the implied warranty of
 # MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
 # See the GNU General Public License for more details.
@@ -35,7 +35,7 @@ from PyQt4.QtCore import QThread, pyqtSlot, pyqtSignal, QString, QTimer
 
 class StreamReader(QThread):
     '''Non-blocking continuous reading from a file-like object'''
-    send_msg = pyqtSignal(str)
+    message_received = pyqtSignal(str)
     
     def __init__(self, _stream):
         QThread.__init__(self)
@@ -47,7 +47,7 @@ class StreamReader(QThread):
         if not self._stream: return False
         msg = self._stream.readline().decode('UTF-8')
         if not msg: return False
-        self.send_msg.emit(QString.fromUtf8(msg))
+        self.message_received.emit(QString.fromUtf8(msg))
         return True
     #end def
     
@@ -93,7 +93,9 @@ class SubprocessThread(QThread):
         self._timer.timeout.connect(self._update_timer_string)
     #end def
         
-    def __del__(self): self._cleanup()
+    def __del__(self): 
+        self._cleanup()
+        self.wait()
     
     @pyqtSlot()
     def _update_timer_string(self):
@@ -219,11 +221,11 @@ class SubprocessThread(QThread):
         if not self._run_subprocess(): return
         #setup stream readers
         self._readers.append(StreamReader(self._subprocess.stderr))
-        self._readers[-1].send_msg.connect(self.message_received)
-        self._readers[-1].send_msg.connect(self._on_error)
+        self._readers[-1].message_received.connect(self.message_received)
+        self._readers[-1].message_received.connect(self._on_error)
         self._readers[-1].start()
         self._readers.append(StreamReader(self._subprocess.stdout))
-        self._readers[-1].send_msg.connect(self.message_received)
+        self._readers[-1].message_received.connect(self.message_received)
         self._readers[-1].start()
         #accept connection
         if not self._listen(): return
