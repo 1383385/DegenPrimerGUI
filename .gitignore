@@ -1,6 +1,8 @@
 *~
+*.pyc
 
 /dist/**
+/build/**
 
 /MANIFEST
 /DegenPrimerGUI/DegenPrimerUI_rc.py
