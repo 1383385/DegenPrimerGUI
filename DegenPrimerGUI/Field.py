@@ -63,11 +63,11 @@ class Field(object):
         
     @staticmethod
     def _del_field(field):
-        if type(field) is list:
+        if isinstance(field, list):
             for subfield in field:
                 Field._del_field(subfield)
             while len(field): field.pop()
-        elif type(field) is dict:
+        elif isinstance(field, dict):
             for subfield in field.values():
                 Field._del_field(subfield)
             field.clear()
@@ -206,7 +206,7 @@ class Field(object):
                 field.setStyleSheet('* { background: hsv(60, 50, 255) }')
             if hasattr(cls.customize_field, '__call__'):
                 cls.customize_field(option, field, label)
-            if type(label) is str: 
+            if isinstance(label, str): 
                 label = QLabel(label, parent)
                 label.setToolTip(option.formatted_desc)
                 label.setSizePolicy(QSizePolicy.Maximum, QSizePolicy.Maximum)
@@ -223,7 +223,7 @@ class Field(object):
     @property
     def value(self):
         value = None
-        if type(self.field) is list:
+        if isinstance(self.field, list):
             value = []
             for instance in self.field:
                 if instance is None: continue
@@ -235,7 +235,7 @@ class Field(object):
                         break
                     inst_value[name] = sub_value
                 if inst_value: value.append(inst_value)
-        elif type(self.field) is dict:
+        elif isinstance(self.field, dict):
             value = dict()
             for name, subfield in self.field.items():
                     sub_value = subfield.value
@@ -263,12 +263,12 @@ class Field(object):
     
     @value.setter
     def value(self, value):
-        if type(self.field) in (list, dict) \
+        if isinstance(self.field, (list, dict)) \
         and type(self.field) != type(value):
             raise ValueError('Field.value: type of a value '
                              'should be the same as the type of the field.')
         if self.option.is_poly and self.field is None: self.field = []
-        if type(self.field) is list:
+        if isinstance(self.field, list):
             while len(self.field) < len(value):
                 self._add_instance()
             while len(self.field) > len(value):
@@ -278,7 +278,7 @@ class Field(object):
                 for instance, inst_value in zip(self.field, value):
                     for name, subvalue in inst_value.items():
                         instance[name].value = subvalue
-        elif type(self.field) is dict:
+        elif isinstance(self.field, dict):
             for name, subvalue in value.items():
                 self.field[name].value = subvalue
         elif isinstance(self.field, QWidget):
