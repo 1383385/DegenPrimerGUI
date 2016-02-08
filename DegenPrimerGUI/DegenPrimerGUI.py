@@ -33,7 +33,7 @@ from DegenPrimer.Option import Option, OptionGroup
 from DegenPrimer.AnalysisTask import AnalysisTask
 from DegenPrimer.OptimizationTask import OptimizationTask
 
-from .Widgets import SequenceTableWidget
+from .Widgets import SequenceTableView
 from .SubprocessThread import SubprocessThread
 from .Field import Field
 import degen_primer_pipeline
@@ -92,11 +92,12 @@ class DegenPrimerGUI(DegenPrimerConfig, QMainWindow):
         #try to load UI
         for path in self._ui_path:
             try:
-                uic.loadUi(QString.fromUtf8(path+self._ui_file), self)
+                filepath = os.path.join(path,self._ui_file)
+                uic.loadUi(QString.fromUtf8(filepath), self)
                 break
-            except:
-                print path+self._ui_file+' no such file.'
-                pass
+            except Exception, e:
+                print 'Unable to load %s' % filepath
+                print e
         if not self.centralWidget(): 
             raise OSError('Error: unable to locate ui file.')
         #fields
@@ -108,8 +109,8 @@ class DegenPrimerGUI(DegenPrimerConfig, QMainWindow):
         self._job_id_label = QLabel(self)
         self.configForm.addWidget(self._job_id_label)
         #sequence db view
+        self._loaded_files = []
         self._seq_db_widget = None
-        self._seq_db_label = None
         self._seq_db_box = None
         self._seq_db_button = None
         for group in self._option_groups: self._build_group_gui(group)
@@ -139,7 +140,7 @@ class DegenPrimerGUI(DegenPrimerConfig, QMainWindow):
         self._pipeline_thread.finished.connect(self.show_results)
         self._pipeline_thread.finished.connect(self.unlock_buttons)
         self._pipeline_thread.update_timer.connect(self.update_timer)
-        self._pipeline_thread.message_received.connect(self.write)
+        self._pipeline_thread.message_received.connect(self.show_message)
         self._pipeline_thread_stop.connect(self._pipeline_thread.stop)
         #restore GUI state
         self._restore_mainwindow_state()
@@ -150,21 +151,16 @@ class DegenPrimerGUI(DegenPrimerConfig, QMainWindow):
         if option.name in self._fields:
             return self._fields[option.name]
         else: return None
-    #end def
-    
         
     def _set_field(self, option, value):
         field = self._field(option)
         if field is None: return
         field.value = value
-    #end def
-    
     
     def _get_field(self, option):
         field = self._field(option)
         if field is None: return None
         return field.value
-    #end def
     
     
     def _customize_field(self, option, field, label):
@@ -179,7 +175,9 @@ class DegenPrimerGUI(DegenPrimerConfig, QMainWindow):
         elif option.name == 'working_directory':
             field.setText(QString.fromUtf8(os.path.abspath(self._cwdir)))
             field.editingFinished.connect(self._check_cwdir_field)
-    #end def
+        elif option.name == 'template_files':
+            field.textChanged.connect(self._del_seq_db_if_changed)
+    
     
     def _del_seq_db(self):
         if self._seq_db_widget is not None:
@@ -187,10 +185,27 @@ class DegenPrimerGUI(DegenPrimerConfig, QMainWindow):
                 self._seq_db_widget.abort_loading.emit()
             self._seq_db_widget.deleteLater()
         self._seq_db_widget = None
-        if self._seq_db_label is not None:
-            self._seq_db_label.deleteLater()
-        self._seq_db_label = None
         self._seq_db_button.setText('Show Sequence Selector')
+    
+    def _del_seq_db_if_changed(self):
+        cur_files = self._fields['template_files'].value
+        if len(self._loaded_files) != len(cur_files):
+            self._del_seq_db()
+            return
+        for old, new in zip(self._loaded_files, cur_files):
+            if old != new:
+                self._del_seq_db()
+                return 
+    
+    def _toggle_seq_db_widget(self):
+        if self._seq_db_widget is None: return
+        if self._seq_db_widget.isHidden():
+            self._seq_db_widget.show()
+            self._seq_db_button.setText('Hide Sequence Selector')
+        else: 
+            self._seq_db_widget.hide()
+            self._seq_db_button.setText('Show Sequence Selector')
+        
         
     @pyqtSlot()
     def _seq_db_loaded(self):
@@ -199,27 +214,25 @@ class DegenPrimerGUI(DegenPrimerConfig, QMainWindow):
     
     def _load_seq_db(self, filenames):
         if not filenames: return
-        self._seq_db_widget = SequenceTableWidget(self.centralWidget())
+        self._loaded_files = filenames
+        self._seq_db_button.setText('Loading sequences, please wait...')
+        self._seq_db_widget = SequenceTableView(self.centralWidget())
         self._seq_db_widget.loaded.connect(self._seq_db_loaded)
         self._seq_db_widget.load_db(filenames)
         db_group_layout = self._seq_db_box.layout()
         use_ids_field   = self._fields['use_sequences'].field
-        self._seq_db_label = QLabel('Sequences in database', self.centralWidget())
-        self._seq_db_label.setSizePolicy(QSizePolicy.Maximum, QSizePolicy.Maximum)
         row = db_group_layout.rowCount()
-        db_group_layout.addWidget(self._seq_db_label, row, 0)
         db_group_layout.addWidget(self._seq_db_widget, row, 1)
         self._seq_db_widget.send_ids.connect(use_ids_field.setText)
         use_ids_field.textChanged.connect(self._seq_db_widget.set_ids)        
 
+
     def _setup_seq_db_view(self, grp_box):
         self._seq_db_box = grp_box
         self._seq_db_button = QPushButton('Show Sequence Selector', self.centralWidget())
-        self._seq_db_button.clicked.connect(self._toggle_seq_db_view)
+        self._seq_db_button.clicked.connect(self._toggle_seq_db)
         layout = self._seq_db_box.layout() 
         layout.addWidget(self._seq_db_button, layout.rowCount(), 1)
-    #end def
-
     
     def _build_group_gui(self, group):
         grp_box    = QGroupBox(group.desc, self.configFormWidget)
@@ -231,8 +244,7 @@ class DegenPrimerGUI(DegenPrimerConfig, QMainWindow):
         #customization
         if group.name == 'iPCR': 
             self._setup_seq_db_view(grp_box)
-    #end def
-            
+
     
     def _save_mainwindow_state(self):
         self._settings.beginGroup('main_window')
@@ -251,19 +263,16 @@ class DegenPrimerGUI(DegenPrimerConfig, QMainWindow):
         if splitter_state != None:
             self.terminalSplitter.restoreState(splitter_state.toByteArray())
         self._settings.endGroup()
-    #end def
     
     
     def _override_option(self, option):
         if self._fields_empty: return None
         return self._get_field(option)
-    #end def
         
     
     def _update_fields(self):
         for option in self._options:
             self._set_field(option, self._unscaled_value(option))
-    #end def
     
     
     @pyqtSlot('QString')
@@ -275,7 +284,6 @@ class DegenPrimerGUI(DegenPrimerConfig, QMainWindow):
         #update form fields
         self._update_fields()
         self._fields_empty = False
-    #end def
     
     
     @pyqtSlot()
@@ -289,7 +297,6 @@ class DegenPrimerGUI(DegenPrimerConfig, QMainWindow):
             self._set_field(self._config_option, config_file)
         else:
             self._load_config(config_file)
-    #end def
 
     
     @pyqtSlot('QString')
@@ -306,7 +313,6 @@ class DegenPrimerGUI(DegenPrimerConfig, QMainWindow):
         self._parse_and_check()
         self._job_id_label.setText(('<p align=center><b>Analysis ID:</b> '
                                     '%s</p>') % self.job_id) 
-    #end def
     
     
     @pyqtSlot()
@@ -319,7 +325,6 @@ class DegenPrimerGUI(DegenPrimerConfig, QMainWindow):
         self.save_configuration()
         #load saved configuration
         self.load_config(self._config_file)
-    #end def
     
     
     @pyqtSlot()
@@ -332,7 +337,6 @@ class DegenPrimerGUI(DegenPrimerConfig, QMainWindow):
                 if cwdir != self._cwdir:
                     self._cwdir = cwdir
                     print '\nWorking directory will be set to: %s\n' % self._cwdir
-    #end def
     
     
     def _change_cwdir(self):
@@ -349,7 +353,6 @@ class DegenPrimerGUI(DegenPrimerConfig, QMainWindow):
         self._cwdir = cwdir
         os.chdir(self._cwdir)
         print '\nWorking directory is %s\n' % os.getcwd()
-    #end def
     
     
     def _parse(self):
@@ -360,12 +363,9 @@ class DegenPrimerGUI(DegenPrimerConfig, QMainWindow):
             self.write('\n'+e.message)
             return False
         return True
-    #end def
-    
     
     def _parse_and_check(self):
         return self._parse() and AnalysisTask.check_options(self)
-    #end def
     
     
     @pyqtSlot()
@@ -386,13 +386,11 @@ class DegenPrimerGUI(DegenPrimerConfig, QMainWindow):
             self.abortButton.setEnabled(True)
             self.abortButton.setText('Abort')
             self._pipeline_thread.start()
-    #end def
     
     
     @pyqtSlot(bool)
     def update_timer(self, time_string):
         self.elapsedTimeLineEdit.setText(time_string)
-    #end def
     
 
     def _clear_results(self):
@@ -400,7 +398,6 @@ class DegenPrimerGUI(DegenPrimerConfig, QMainWindow):
             self.mainTabs.removeTab(1)
         self._reports = []
         self._del_seq_db()
-    #end def
     
     
     @pyqtSlot()
@@ -409,14 +406,12 @@ class DegenPrimerGUI(DegenPrimerConfig, QMainWindow):
         self.terminalOutput.clear()
         self._clear_results()
         self._load_config(None)
-    #end def
     
     
     def _show_run_specific_widgets(self, show=True):
         for widget in self._run_widgets:
             if show: widget.show()
             else: widget.hide()
-    #end def
     
     #for pipeline thread to call
     #lock analyze and reset buttons while analysis is running
@@ -425,7 +420,7 @@ class DegenPrimerGUI(DegenPrimerConfig, QMainWindow):
         for widget in self._idle_widgets:
             widget.setEnabled(not lock)
         self._show_run_specific_widgets(lock)
-    #end def
+
     @pyqtSlot()
     def unlock_buttons(self): self.lock_buttons(False)
     
@@ -455,24 +450,17 @@ class DegenPrimerGUI(DegenPrimerConfig, QMainWindow):
             self.mainTabs.addTab(report_widget, report_name)
         #alert main window
         QApplication.alert(self)
-    #end def
-    
     
     @pyqtSlot()
-    def _toggle_seq_db_view(self):
+    def _toggle_seq_db(self):
         if self._seq_db_widget is None:
-            self._seq_db_button.setText('Loading sequences, please wait...')
-            self._load_seq_db(self.template_files)
-        else: self._del_seq_db()
+            self._load_seq_db(self._fields['template_files'].value)
+        else: self._toggle_seq_db_widget()
         
-    #stdout/err catcher
-    def write(self, text):
+    @pyqtSlot(str)
+    def show_message(self, text):
         self.terminalOutput.moveCursor(QTextCursor.End)
         self._append_terminal_output.emit(QString.fromUtf8(text))
-    #end def
-        
-    def flush(self): pass
-        
         
     #abort handler
     @pyqtSlot()
@@ -481,7 +469,6 @@ class DegenPrimerGUI(DegenPrimerConfig, QMainWindow):
             self._pipeline_thread_stop.emit()
             self.abortButton.setEnabled(False)
             self.abortButton.setText('Aborting...')
-    #end def
     
     #close handler
     def closeEvent(self, event):
@@ -497,17 +484,4 @@ class DegenPrimerGUI(DegenPrimerConfig, QMainWindow):
                 return
         self._save_mainwindow_state() 
         event.accept()
-    #end def
 #end class
-
-
-#tests
-import sys
-
-if __name__ == '__main__':
-    app = QApplication(sys.argv)
-    main = DegenPrimerGUI()
-    sys.stdout = main
-    sys.stderr = main
-    main.show()
-    sys.exit(app.exec_())

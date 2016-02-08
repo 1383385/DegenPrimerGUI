@@ -18,14 +18,12 @@ Created on Mar 23, 2013
 @author: Allis Tauri <allista@gmail.com>
 '''
 
-from __future__ import print_function
-
-from PyQt4.QtCore import Qt, QString, QSettings, pyqtSlot, pyqtSignal
+from PyQt4.QtCore import Qt, QString, QSettings, pyqtSlot, pyqtSignal, QThread, \
+QAbstractTableModel, QModelIndex, QVariant
 from PyQt4.QtGui import QLineEdit, QTableWidget, QTableWidgetItem,  \
-QAbstractItemView, QFileDialog
+QAbstractItemView, QFileDialog, QTableView
 
-from .SubprocessThread import SubprocessThread
-from . import seq_loader
+from BioUtils.SeqUtils import SeqView, pretty_rec_name
 
 class PolyLineEdit(QLineEdit):
     '''Wrapper for QLineEdit which overloads setText 
@@ -41,7 +39,7 @@ class PolyLineEdit(QLineEdit):
     
     def text(self):
         text = unicode(QLineEdit.text(self))
-        return [item.rstrip(', ') for item in text.split(', ') if item]
+        return [it for it in (item.strip() for item in text.split(',')) if it]
     #end def
 #end class
 
@@ -82,8 +80,75 @@ class FileDialog(QFileDialog):
     #end def
 #end class
 
+#adapted from https://sateeshkumarb.wordpress.com/2012/04/01/paginated-display-of-table-data-in-pyqt/
+class SequenceTableModel(QAbstractTableModel):
+    
+    rows_to_load = 10
+    
+    select_row = pyqtSignal(int)
+    
+    def __init__(self, db, parent=None):
+        super(SequenceTableModel, self).__init__(parent)
+        self._header = ['ID', 'description']
+        self._db     = db
+        self._rows   = []
+        self._to_select = []
+        self.fetchMore()
+    
+    def rowCount(self, index=QModelIndex()):
+        dbl = len(self._db); nrows = len(self._rows)
+        return dbl if dbl < nrows else nrows
+    
+    def canFetchMore(self, index=QModelIndex()):
+        return len(self._db) > len(self._rows)
+ 
+    def fetchMore(self, index=QModelIndex()):
+        start = len(self._rows)
+        end = start+min(len(self._db) - start, self.rows_to_load)
+        self.beginInsertRows(QModelIndex(), start, end-1)
+        self._rows.extend((sid, pretty_rec_name(self._db[sid])) for sid in self._db.keys()[start:end])
+        self.endInsertRows()
+        if self._to_select and start <= self._to_select[0]:
+            selected = 0
+            for row in self._to_select:
+                if row >= end: break
+                self.select_row.emit(row)
+                selected += 1
+            self._to_select = self._to_select[selected:]                
+ 
+    def columnCount(self,index=QModelIndex()):
+        return len(self._header)
+ 
+    def data(self, index, role=Qt.DisplayRole):
+        if role != Qt.DisplayRole: return QVariant() #why?
+        col = index.column()
+        row = self._rows[index.row()]
+        return QVariant(row[col]) if col < len(row) else QVariant()
+    
+    def headerData(self, section, orientation, role=Qt.DisplayRole):
+        if role != Qt.DisplayRole: return QVariant()
+        if orientation == Qt.Horizontal:
+            return QVariant(self._header[section])
+        return QVariant(int(section + 1))
+    
+    def sid(self, index): return self._db.keys()[index]
+    
+    def sindex(self, sid): 
+        try: return self._db.keys().index(sid)
+        except ValueError: return -1
+        
+    def sindexes(self, sids):
+        found = []
+        for i, k in enumerate(self._db.keys()):
+            if len(found) >= len(sids): break
+            if k in sids: found.append(i)
+        return found
+    
+    def to_select(self, rows):
+        self._to_select = rows
 
-class SequenceTableWidget(QTableWidget):
+
+class SequenceTableView(QTableView):
     '''TableWidget that lists content of sequence database and returns IDs of
     selected sequences'''
     
@@ -91,81 +156,99 @@ class SequenceTableWidget(QTableWidget):
     abort_loading = pyqtSignal()
     loaded = pyqtSignal()
     
+    class _Loader(QThread):
+        loaded = pyqtSignal()
+        def __init__(self, filenames):
+            QThread.__init__(self)
+            self.db = None
+            self.filenames = filenames
+            
+        def __del__(self):
+            self.wait()
+            
+        def run(self):
+            self.db = SeqView()
+            self.db.load(self.filenames)
+            self.loaded.emit()
+            
     def __init__(self, parent=None):
-        QTableWidget.__init__(self, parent)
+        QTableView.__init__(self, parent)
         self.hide()
-        self.setColumnCount(2)
         self.setSelectionBehavior(QAbstractItemView.SelectRows)
         self.setSelectionMode(QAbstractItemView.MultiSelection)
-#        self.setSortingEnabled(True)
-        self.cellClicked.connect(self._get_ids)
+        self.setHorizontalScrollMode(self.ScrollPerPixel)
+        self.setAlternatingRowColors(True)
+        self.setWordWrap(True)
+        self.clicked.connect(self._toggle_selection)
         self._loader = None
+        self._db = None
+        self._selected = []
     
     def __del__(self):
         if self._loader is not None:
-            self._loader.stop()
+            self._loader.wait()
+        if self._db is not None: 
+            self._db.close()
         
     def clear(self):
-        QTableWidget.clear(self)
-        self.setRowCount(0)
-        self.setHorizontalHeaderLabels(['ID', 'description'])
+        self.clearSelection()
+        self.setModel(None)
+        if self._db is not None: 
+            self._db.close()
+        self._db = None
     
-    @staticmethod
-    def _readonly(_it):
-        _it.setFlags(_it.flags() ^ Qt.ItemIsEditable)
-        return _it
-    
-    @pyqtSlot(list)
-    def _add_row(self, (sid, description)):
-        self.insertRow(0)
-        self.setItem(0, 0, self._readonly(QTableWidgetItem(sid)))
-        self.setItem(0, 1, self._readonly(QTableWidgetItem(description)))
-        
-    @pyqtSlot(bool)
-    def _db_loaded(self, _success):
-        self.setMinimumHeight(self.rowHeight(0)*min(11, self.rowCount()))
-        self.resizeColumnsToContents()
-        self.loaded.emit()
+    @pyqtSlot()
+    def _db_loaded(self):
+        self._db = self._loader.db.clone()
+        self._loader.db.close()
         self._loader = None
-        self.show()
+        if self._db: 
+            self.setModel(SequenceTableModel(self._db))
+            self.setMinimumHeight(self.rowHeight(0)*min(SequenceTableModel.rows_to_load+1, len(self._db)))
+            self.resizeColumnsToContents()
+            self.model().select_row.connect(self.selectRow)
+            self.show()
+        else: self.clear()
+        self.loaded.emit()
         
     def load_db(self, filenames):
         self.clear()
-        self._loader = SubprocessThread(seq_loader)
-        self._loader.results_received.connect(self._add_row)
-        self._loader.finished.connect(self._db_loaded)
-        self._loader.message_received.connect(print)
-        self.abort_loading.connect(self._loader.stop)
-        self._loader.set_data(filenames)
+        self._loader = self._Loader(filenames)
+        self._loader.loaded.connect(self._db_loaded)
+        self.abort_loading.connect(self._loader.terminate)
         self._loader.start()
         
     @property
     def loading(self): return self._loader is not None
     
-    @pyqtSlot('int', 'int')
-    def _get_ids(self, row, col):
-        ids = self.get_ids()
-        if ids: self.send_ids.emit(ids)
-    
-    @pyqtSlot()
-    def get_ids(self):
-        selected = self.selectedItems()
-        ids = []
-        for item in selected:
-            if item.column() != 0: continue
-            ids.append(unicode(item.text()))
-        return ids
+    @pyqtSlot('QModelIndex')
+    def _toggle_selection(self, index):
+        try: 
+            i = self._selected.index(index.row())
+            del self._selected[i]
+        except ValueError:
+            self._selected.append(index.row())
+        self.send_ids.emit([self.model().sid(row) for row in self._selected])
+        
+    def clearSelection(self):
+        self._selected = []
+        QTableView.clearSelection(self)
     
     @pyqtSlot('QString')
     def set_ids(self, ids):
         self.clearSelection()
-        ids = unicode(ids).split(', ')
+        ids = [sid.rstrip(', ') for sid in unicode(ids).split(', ')]
         if not ids: return
-        for sid in ids:
-            if not sid: continue
-            items = self.findItems(sid.rstrip(', '), Qt.MatchExactly)
-            for item in items:
-                selected = self.selectedItems()
-                if item not in selected:
-                    self.selectRow(item.row())
+        model = self.model()
+        rows_loaded = model.rowCount()
+        self._selected = model.sindexes(ids)
+        for i, row in enumerate(self._selected):
+            if row >= rows_loaded:
+                model.to_select(self._selected[i:])
+                break
+            self.selectRow(row)
+                
+    def scrollTo(self, index, hint = QTableView.EnsureVisible):
+        if hint != QTableView.EnsureVisible:
+            QTableView.scrollTo(self, index, hint)
 #end class

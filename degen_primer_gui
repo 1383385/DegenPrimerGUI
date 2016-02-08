@@ -27,6 +27,7 @@ from time import sleep
 from PyQt4.QtCore import QTimer
 from PyQt4.QtGui import QApplication
 from DegenPrimerGUI.DegenPrimerGUI import DegenPrimerGUI
+from DegenPrimerGUI.QtOutput import QtOutput
 
 
 _pid = -1
@@ -36,7 +37,6 @@ def sig_handler(signal, frame):
     sleep(1)
     sys.exit(1)
 #end def
-   
 
 if __name__ == '__main__':
     #set PID
@@ -61,15 +61,15 @@ if __name__ == '__main__':
     timer = QTimer()
     timer.start(500)
     timer.timeout.connect(lambda: None)
-    #setup main window
-    degen_primer_main = DegenPrimerGUI()
     #catch stdout/err
-    sys.stdout = degen_primer_main
-    sys.stderr = degen_primer_main
-    #show main window
-    degen_primer_main.show()
-    #if configuration file is provided, parse it
-    if config_file:
-        degen_primer_main.load_config(config_file)
-    #run
-    sys.exit(app.exec_())
+    with QtOutput() as reader:
+        #setup main window
+        degen_primer_main = DegenPrimerGUI()
+        reader.message_received.connect(degen_primer_main.show_message)
+        #show main window
+        degen_primer_main.show()
+        #if configuration file is provided, parse it
+        if config_file:
+            degen_primer_main.load_config(config_file)
+        #run
+        sys.exit(app.exec_())
