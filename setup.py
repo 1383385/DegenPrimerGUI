@@ -54,7 +54,7 @@ from distutils.core import setup
 setup(name='degen-primer-gui',
       version='2.1.1',
       description='Qt GUI for DegenPrimer',
-      long_description=read('README'),
+      long_description=read('README.md'),
       license='GPL-3',
       author='Allis Tauri',
       author_email='allista@gmail.com',
