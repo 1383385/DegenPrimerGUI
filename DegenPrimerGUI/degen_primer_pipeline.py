@@ -1,3 +1,4 @@
+#!/usr/bin/python
 # Copyright (C) 2012 Allis Tauri <allista@gmail.com>
 # 
 # degen_primer is free software: you can redistribute it and/or modify it
