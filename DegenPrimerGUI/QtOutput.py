@@ -67,7 +67,7 @@ class QtOutput(OutIntercepter, Queue):
         if self._debug: 
             self._out.write(text)
             self._out.flush() 
-        self.put(text)
+        self.put_nowait(text)
     
     def __enter__(self):
         OutIntercepter.__enter__(self)
