@@ -23,10 +23,11 @@ import os
 import abc
 from PyQt4 import uic
 from PyQt4.QtCore import QString, pyqtSlot, pyqtSignal, \
-QSettings, pyqtWrapperType
+QSettings, pyqtWrapperType, Qt
 from PyQt4.QtGui import QApplication, QMainWindow, QGroupBox, \
-QFileDialog, QPlainTextEdit, QFont, QMessageBox, \
-QLabel, QGridLayout, QSizePolicy, QTextCursor, QPushButton
+QFileDialog,  QFont, QMessageBox, QTextDocument, \
+QLabel, QGridLayout, QTextCursor, QPushButton, \
+QFrame, QTextEdit, QLineEdit, QShortcut, QKeySequence
 
 from DegenPrimer.DegenPrimerConfig import DegenPrimerConfig
 from DegenPrimer.Option import Option, OptionGroup
@@ -47,7 +48,7 @@ class DegenPrimerGUI(DegenPrimerConfig, QMainWindow):
     '''Graphical User Interface for degen_primer'''
     __metaclass__ = pyqtABCMeta
 
-    _ui_path = ('./', '/usr/local/share/degen_primer_gui/', '/usr/share/degen_primer_gui/')
+    _ui_path = ('./', 'resources/', '/usr/local/share/degen_primer_gui/', '/usr/share/degen_primer_gui/')
     _ui_file = 'DegenPrimerUI.ui'
     
     _config_option = Option(name='config',
@@ -90,16 +91,7 @@ class DegenPrimerGUI(DegenPrimerConfig, QMainWindow):
         #session independent configuration
         self._settings = QSettings()
         #try to load UI
-        for path in self._ui_path:
-            try:
-                filepath = os.path.join(path,self._ui_file)
-                uic.loadUi(QString.fromUtf8(filepath), self)
-                break
-            except Exception, e:
-                print 'Unable to load %s' % filepath
-                print e
-        if not self.centralWidget(): 
-            raise OSError('Error: unable to locate ui file.')
+        self.load_ui(self._ui_file, self)
         #fields
         Field.customize_field = self._customize_field
         self._fields = dict()
@@ -424,6 +416,46 @@ class DegenPrimerGUI(DegenPrimerConfig, QMainWindow):
     @pyqtSlot()
     def unlock_buttons(self): self.lock_buttons(False)
     
+    @classmethod
+    def load_ui(cls, ui_file, widget):
+        npaths = len(cls._ui_path)
+        for i, path in enumerate(cls._ui_path):
+            try:
+                filepath = os.path.join(path, ui_file)
+                uic.loadUi(QString.fromUtf8(filepath), widget)
+                break
+            except (OSError, IOError):
+                if i == npaths-1:
+                    raise OSError('Error: unable to locate %s.' % ui_file)
+
+    class ReportWidget(QFrame):
+        _ui_file = 'ReportWidget.ui'
+        
+        def __init__(self, parent=None):
+            QFrame.__init__(self, parent=parent)
+            DegenPrimerGUI.load_ui(self._ui_file, self)
+            self.editor = self.findChild(QTextEdit, 'ReportTextEdit')
+            self.search = self.findChild(QLineEdit, 'SearchLineEdit')
+            self.search.textChanged.connect(self.find_text)
+            self.search.returnPressed.connect(self.find_next)
+            QShortcut(QKeySequence(Qt.Key_F3), self, self.find_next)
+            QShortcut(QKeySequence(Qt.Key_F2), self, self.find_prev)
+            self.term = ''
+
+        @pyqtSlot('QString')
+        def find_text(self, qstring):
+            self.term = str(qstring)
+            self.find_next()
+            
+        @pyqtSlot()
+        def find_next(self):
+            if not self.term: return
+            self.editor.find(self.term)
+            
+        @pyqtSlot()
+        def find_prev(self):
+            if not self.term: return
+            self.editor.find(self.term, QTextDocument.FindBackward)
     
     #show result tabs
     @pyqtSlot()
@@ -432,11 +464,7 @@ class DegenPrimerGUI(DegenPrimerConfig, QMainWindow):
         #display reports
         for report_name, report_file in self._reports:
             #load report
-            report_widget = QPlainTextEdit()
-            font = QFont()
-            font.setFamily('Monospace')
-            report_widget.setFont(font)
-            report_widget.setReadOnly(True)
+            report_widget = self.ReportWidget(self.centralWidget())
             try:
                 report_file = open(report_file, 'r')
                 report_text = report_file.read()
@@ -445,8 +473,8 @@ class DegenPrimerGUI(DegenPrimerConfig, QMainWindow):
                 print 'Unable to load report file:', report_file
                 print e
                 continue
-            report_widget.insertPlainText(QString.fromUtf8(report_text))
-            report_widget.moveCursor(QTextCursor.Start, QTextCursor.MoveAnchor)
+            report_widget.editor.insertPlainText(QString.fromUtf8(report_text))
+            report_widget.editor.moveCursor(QTextCursor.Start, QTextCursor.MoveAnchor)
             self.mainTabs.addTab(report_widget, report_name)
         #alert main window
         QApplication.alert(self)

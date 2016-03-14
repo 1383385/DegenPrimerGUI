@@ -29,7 +29,7 @@ def read(fname):
     return open(os.path.join(os.path.dirname(__file__), fname)).read()
 
 #compile resources
-qrc_filename = 'DegenPrimerUI.qrc'
+qrc_filename = 'resources/DegenPrimerUI.qrc'
 rcc_filename = 'DegenPrimerGUI/DegenPrimerUI_rc.py'
 pyrcc4_cli   = 'pyrcc4 -py3 %s' % qrc_filename
 child = subprocess.Popen(pyrcc4_cli,
@@ -52,7 +52,7 @@ rcc_file.close()
 #setup
 from distutils.core import setup
 setup(name='degen-primer-gui',
-      version='2.1.1',
+      version='2.2.0',
       description='Qt GUI for DegenPrimer',
       long_description=read('README.md'),
       license='GPL-3',
@@ -67,7 +67,7 @@ setup(name='degen-primer-gui',
         'Programming Language :: Python'],
       packages=['DegenPrimerGUI'],
       scripts=['degen_primer_gui'],
-      data_files=[('share/icons/hicolor/scalable/apps', ['degen_primer.svg']),
+      data_files=[('share/icons/hicolor/scalable/apps', ['resources/degen_primer.svg', 'resources/clear.svg']),
                   ('share/applications', ['DegenPrimerGUI.desktop']),
-                  ('share/degen_primer_gui', ['DegenPrimerUI.ui', 'DegenPrimerUI.qrc'])]
+                  ('share/degen_primer_gui', ['resources/DegenPrimerUI.ui', 'resources/DegenPrimerUI.qrc', 'resources/ReportWidget.ui'])]
       )
