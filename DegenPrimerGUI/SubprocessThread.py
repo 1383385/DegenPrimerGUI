@@ -222,7 +222,7 @@ class SubprocessThread(QThread):
         #setup stream readers
         self._readers.append(StreamReader(self._subprocess.stderr))
         self._readers[-1].message_received.connect(self.message_received)
-        self._readers[-1].message_received.connect(self._on_error)
+#        self._readers[-1].message_received.connect(self._on_error)
         self._readers[-1].start()
         self._readers.append(StreamReader(self._subprocess.stdout))
         self._readers[-1].message_received.connect(self.message_received)
