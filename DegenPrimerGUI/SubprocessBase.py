@@ -211,6 +211,7 @@ class SubprocessBase(object):
             if sys_exit: sys.exit(e.code)
             else: return e.code
         except:
+            print 'Unhandled exception:'
             traceback.print_exc()
             if sys_exit: sys.exit(1)
             else: return 1

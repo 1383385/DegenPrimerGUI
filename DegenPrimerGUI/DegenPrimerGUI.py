@@ -470,8 +470,7 @@ class DegenPrimerGUI(DegenPrimerConfig, QMainWindow):
                 report_text = report_file.read()
                 report_file.close()
             except Exception, e:
-                print 'Unable to load report file:', report_file
-                print e
+                print 'Unable to load report file: %s\n%s' % (report_file, str(e))
                 continue
             report_widget.editor.insertPlainText(QString.fromUtf8(report_text))
             report_widget.editor.moveCursor(QTextCursor.Start, QTextCursor.MoveAnchor)
